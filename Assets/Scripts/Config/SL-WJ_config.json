@@ -1,0 +1,402 @@
+{
+  "id": "SL-WJ",
+  "bets": [
+    0.01,
+    0.02,
+    0.04,
+    0.05,
+    0.07,
+    0.1,
+    0.2,
+    0.4,
+    0.5,
+    0.7,
+    1,
+    1.5,
+    2,
+    3,
+    4,
+    5
+  ],
+  "lines": [
+    [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    [
+      0,
+      1,
+      2,
+      1,
+      0
+    ],
+    [
+      2,
+      1,
+      0,
+      1,
+      2
+    ],
+    [
+      0,
+      0,
+      1,
+      2,
+      2
+    ],
+    [
+      2,
+      2,
+      1,
+      0,
+      0
+    ],
+    [
+      1,
+      2,
+      1,
+      0,
+      1
+    ],
+    [
+      1,
+      0,
+      1,
+      2,
+      1
+    ],
+    [
+      0,
+      1,
+      0,
+      1,
+      0
+    ],
+    [
+      2,
+      1,
+      2,
+      1,
+      2
+    ],
+    [
+      1,
+      1,
+      0,
+      1,
+      1
+    ],
+    [
+      1,
+      1,
+      2,
+      1,
+      1
+    ],
+    [
+      0,
+      1,
+      1,
+      1,
+      0
+    ],
+    [
+      2,
+      1,
+      1,
+      1,
+      2
+    ],
+    [
+      0,
+      0,
+      2,
+      0,
+      0
+    ],
+    [
+      2,
+      2,
+      0,
+      2,
+      2
+    ],
+    [
+      0,
+      2,
+      2,
+      2,
+      0
+    ],
+    [
+      2,
+      0,
+      0,
+      0,
+      2
+    ],
+    [
+      1,
+      2,
+      2,
+      2,
+      1
+    ]
+  ],
+  "matrix": {
+    "x": 5,
+    "y": 3
+  },
+  "symbols": [
+    {
+      "id": 1,
+      "name": "Wild",
+      "group": "wild",
+      "payouts": {
+        "3": 0,
+        "4": 0,
+        "5": 0
+      },
+      "reelsInstance": {
+        "0": 5,
+        "1": 5,
+        "2": 5,
+        "3": 5,
+        "4": 5
+      }
+    },
+    {
+      "id": 2,
+      "name": "Jack-in-the-box",
+      "group": "high",
+      "payouts": {
+        "2": 2,
+        "3": 50,
+        "4": 150,
+        "5": 250
+      },
+      "reelsInstance": {
+        "0": 6,
+        "1": 5,
+        "2": 5,
+        "3": 5,
+        "4": 5
+      }
+    },
+    {
+      "id": 3,
+      "name": "A",
+      "group": "high",
+      "payouts": {
+        "3": 10,
+        "4": 50,
+        "5": 150
+      },
+      "reelsInstance": {
+        "0": 8,
+        "1": 6,
+        "2": 6,
+        "3": 6,
+        "4": 6
+      }
+    },
+    {
+      "id": 4,
+      "name": "K",
+      "group": "high",
+      "payouts": {
+        "3": 10,
+        "4": 50,
+        "5": 150
+      },
+      "reelsInstance": {
+        "0": 10,
+        "1": 8,
+        "2": 8,
+        "3": 8,
+        "4": 8
+      }
+    },
+    {
+      "id": 5,
+      "name": "Q",
+      "group": "low",
+      "payouts": {
+        "3": 5,
+        "4": 10,
+        "5": 100
+      },
+      "reelsInstance": {
+        "0": 14,
+        "1": 12,
+        "2": 12,
+        "3": 12,
+        "4": 12
+      }
+    },
+    {
+      "id": 6,
+      "name": "J",
+      "group": "low",
+      "payouts": {
+        "3": 5,
+        "4": 10,
+        "5": 100
+      },
+      "reelsInstance": {
+        "0": 16,
+        "1": 14,
+        "2": 14,
+        "3": 14,
+        "4": 14
+      }
+    },
+    {
+      "id": 7,
+      "name": "10",
+      "group": "low",
+      "payouts": {
+        "3": 5,
+        "4": 10,
+        "5": 100
+      },
+      "reelsInstance": {
+        "0": 18,
+        "1": 16,
+        "2": 16,
+        "3": 16,
+        "4": 16
+      }
+    },
+    {
+      "id": 8,
+      "name": "Drum",
+      "group": "scatter",
+      "payouts": {},
+      "reelsInstance": {
+        "0": 0,
+        "1": 4,
+        "2": 4,
+        "3": 4,
+        "4": 0
+      }
+    },
+    {
+      "id": 9,
+      "name": "Ball",
+      "group": "scatter",
+      "payouts": {},
+      "reelsInstance": {
+        "0": 3,
+        "1": 3,
+        "2": 3,
+        "3": 3,
+        "4": 3
+      }
+    },
+    {
+      "id": 10,
+      "name": "Sandbell",
+      "group": "scatter",
+      "payouts": {},
+      "reelsInstance": {
+        "0": 3,
+        "1": 3,
+        "2": 3,
+        "3": 3,
+        "4": 3
+      }
+    }
+  ],
+  "features": {
+    "freeSpins": {
+      "enabled": true,
+      "respinReel": 3,
+      "spinsCount": 10,
+      "triggerReels": [
+        1,
+        2,
+        3
+      ],
+      "nearMissReels": [
+        1,
+        2
+      ]
+    },
+    "ballPickemBonus": {
+      "enabled": true,
+      "respinReel": 4,
+      "triggerCount": 3,
+      "nearMissReels": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "availablePrizes": [
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        40,
+        50,
+        100
+      ],
+      "maxWinMultiplier": 500,
+      "nearMissCountRange": {
+        "max": 4,
+        "min": 2
+      },
+      "triggerProbability": 0.1
+    },
+    "sandbellPickBonus": {
+      "enabled": true,
+      "respinReel": 4,
+      "triggerCount": 3,
+      "nearMissReels": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "availablePrizes": [
+        5,
+        10,
+        15,
+        20,
+        25,
+        30,
+        40,
+        50,
+        100,
+        250,
+        500
+      ],
+      "maxWinMultiplier": 500,
+      "nearMissCountRange": {
+        "max": 4,
+        "min": 2
+      },
+      "triggerProbability": 0.1
+    }
+  }
+}
