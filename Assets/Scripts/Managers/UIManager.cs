@@ -509,17 +509,17 @@ public class UIManager : MonoBehaviour
         UpdateLineCountDisplay();
     }
 
-    // The ways count, server-driven and fixed for the session — set once on init rather than per spin.
-    // Not activeLine: that is the bet multiplier (50), which means nothing to a player. With no ways
-    // count in the init, the label keeps whatever the scene has.
+    // The number of paylines, server-driven and fixed for the session — set once on init rather than
+    // per spin. activeLine is both that and the bet multiplier, since every line is always played.
+    // (Gold of Luck showed its 243 ways here instead, because its multiplier was 50.)
     private void UpdateLineCountDisplay()
     {
         if (gameManager == null || gameManager.gameConfig == null) return;
 
-        int ways = gameManager.gameConfig.waysCount;
-        if (ways <= 0) return;
+        int lines = gameManager.gameConfig.activeLine;
+        if (lines <= 0) return;
 
-        SetTMPText(lineCountText, lineCountTextPortrait, ways.ToString());
+        SetTMPText(lineCountText, lineCountTextPortrait, lines.ToString());
     }
 
     internal void OnSpinStarted()
@@ -567,7 +567,7 @@ public class UIManager : MonoBehaviour
     /// Free games show the round's running total, which GameManager tracks from the server's
     /// per-round figure rather than this spin's own win.
     ///
-    /// A Genie Wheel trigger spin shows its ways win alone while the wheel's prize is held back —
+    /// A Genie Wheel trigger spin shows its line wins alone while the wheel's prize is held back —
     /// the first of its two payout stages (genieWheel.md §3.10). The prize is written later, by
     /// ShowWinAmount, once the feature has presented it.
     ///
@@ -579,7 +579,7 @@ public class UIManager : MonoBehaviour
     {
         if (gameManager == null) return result.winAmount;
         if (gameManager.isInFreeSpins) return gameManager.freeSpinsRoundWin;
-        if (gameManager.withholdWheelPrize) return result.waysWinAmount;
+        if (gameManager.withholdWheelPrize) return result.lineWinAmount;
         return result.winAmount;
     }
 

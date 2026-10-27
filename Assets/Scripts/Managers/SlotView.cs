@@ -14,73 +14,42 @@ public class SlotView : MonoBehaviour
     private const int SymbolCount = 10;
 
     [Header("Symbol Sprites - Assign by Name")]
-    // Field names match the backend's symbol "name" exactly, so the two can be checked against
-    // each other at a glance. The ids are the init's symbol ids and are what the server's matrix
-    // carries — if the backend ever reorders the table, BuildSymbolSpriteArray is what to correct.
-    [SerializeField] private Sprite spritePrince;             // ID: 0  (high — top paytable)
-    [SerializeField] private Sprite spritePrincess;           // ID: 1  (high)
-    [SerializeField] private Sprite spriteCamel;              // ID: 2  (high)
-    [SerializeField] private Sprite spriteParrot;             // ID: 3  (high)
-    [SerializeField] private Sprite spriteTurban;             // ID: 4  (low)
-    [SerializeField] private Sprite spriteCarpet;             // ID: 5  (low)
-    [SerializeField] private Sprite spriteSword;              // ID: 6  (low)
-    [SerializeField] private Sprite spritePotion;             // ID: 7  (low)
-    [SerializeField] private Sprite spriteGenie;              // ID: 8  (wild — reels 2-4 only, carries a multiplier)
-    [SerializeField] private Sprite spriteLamp;               // ID: 9  (scatter — reels 3-5 only, triggers the Genie Wheel)
-
-    // The Genie drawn with its multiplier, keyed by the VALUE — deliberately NOT part of the
-    // id-keyed table above, and not in BuildSymbolSpriteArray's symbolSprites.
-    //
-    // Every Genie on the board is symbol id 8. The multiplier is not part of the symbol: the server
-    // sends it per CELL, in payload.genieMultipliers, so which of these is drawn depends on where
-    // the Genie landed rather than on what it is. That makes this a value-keyed lookup done at draw
-    // time, and it is why an id-keyed array cannot express it.
-    //
-    // Each is optional. An unassigned value falls back to the plain spriteGenie above, so a partial
-    // art drop still runs — and so do the places that legitimately have no multiplier to show: the
-    // scroll buffer, the pre-spin board, and any Genie the server never attached a value to.
-    [Header("Genie Multiplier Sprites - Keyed by VALUE, not by symbol id")]
-    [Tooltip("The Genie drawn with x2. Empty = a x2 Genie falls back to the plain Genie sprite.")]
-    [SerializeField] private Sprite spriteGenie2;
-    [Tooltip("The Genie drawn with x3. Empty = a x3 Genie falls back to the plain Genie sprite.")]
-    [SerializeField] private Sprite spriteGenie3;
-    [Tooltip("The Genie drawn with x4. Empty = a x4 Genie falls back to the plain Genie sprite.")]
-    [SerializeField] private Sprite spriteGenie4;
-
-    // The numbered Genies' win animations, keyed by value the same way. Each is optional, and an
-    // unwired one does NOT fall back to the plain Genie clip (animSpritesGenie): that clip has no
-    // number on it, so the multiplier would vanish exactly while the Genie is paying. A winning
-    // numbered Genie with no clip simply stays on its numbered static sprite. See GetGenieAnimFrames.
-    [Header("Genie Multiplier Animations - Keyed by VALUE, not by symbol id")]
-    [Tooltip("Win animation for the x2 Genie. Empty = a winning x2 Genie stays on its static x2 sprite.")]
-    [SerializeField] private List<Sprite> animSpritesGenie2;
-    [Tooltip("Win animation for the x3 Genie. Empty = a winning x3 Genie stays on its static x3 sprite.")]
-    [SerializeField] private List<Sprite> animSpritesGenie3;
-    [Tooltip("Win animation for the x4 Genie. Empty = a winning x4 Genie stays on its static x4 sprite.")]
-    [SerializeField] private List<Sprite> animSpritesGenie4;
+    // Field names follow the backend's symbol "name", so the two can be checked against each other
+    // at a glance. The ids are the init's symbol ids and are what the server's matrix carries — if
+    // the backend ever reorders the table, BuildSymbolSpriteArray is what to correct.
+    [SerializeField] private Sprite spriteWild;               // ID: 0  (wild)
+    [SerializeField] private Sprite spriteJackInTheBox;       // ID: 1  (high — top paytable)
+    [SerializeField] private Sprite spriteA;                  // ID: 2  (high)
+    [SerializeField] private Sprite spriteK;                  // ID: 3  (high)
+    [SerializeField] private Sprite spriteQ;                  // ID: 4  (low)
+    [SerializeField] private Sprite spriteJ;                  // ID: 5  (low)
+    [SerializeField] private Sprite spriteTen;                // ID: 6  (low)
+    [SerializeField] private Sprite spriteDrum;               // ID: 7  (scatter — reels 2-4 only, triggers Free Spins)
+    [SerializeField] private Sprite spriteBall;               // ID: 8  (scatter — triggers the Ball Pick'em bonus)
+    [SerializeField] private Sprite spriteSandbell;           // ID: 9  (scatter — triggers the Sandbell Pick bonus)
 
     // Rect size for each symbol, keyed by symbol id. Any id not listed here uses normalSymbolSize.
     //
-    // Every symbol is listed: the regular ones at DefaultSymbolSize (200), the Sword at 300, the
-    // Genie at 262.5 and the Lamp at 300×600. Sizing is per-symbol art, not a role: anything above
-    // the 175 pitch overlaps its vertical neighbours, which is intentional bleed but also means it
-    // swallows clicks aimed at the cells above and below.
+    // Every symbol is listed, all at DefaultSymbolSize (200) until each is sized against its own
+    // art. Sizing is per-symbol art, not a role: anything above the 175 pitch overlaps its vertical
+    // neighbours, which is intentional bleed but also means it swallows clicks aimed at the cells
+    // above and below.
     //
     // Kept next to the sprite fields on purpose: both are id-keyed maps of the same symbol table, so
     // if the backend ever reorders it they have to be corrected together.
     private static readonly Vector2 DefaultSymbolSize = new Vector2(200f, 200f);
     private static readonly Dictionary<int, Vector2> SymbolSizeOverrides = new Dictionary<int, Vector2>
     {
-        {0, DefaultSymbolSize},  // Prince
-        {1, DefaultSymbolSize},  // Princess
-        {2, DefaultSymbolSize},  // Camel
-        {3, DefaultSymbolSize},  // Parrot
-        {4, DefaultSymbolSize},  // Turban
-        {5, DefaultSymbolSize},  // Carpet
-        {6, new Vector2(300f, 300f)},  // Sword
-        {7, DefaultSymbolSize},  // Potion
-        {8, new Vector2(262.5f, 262.5f)},  // Genie (oversized)
-        {9, new Vector2(300f, 600f)}   // Lamp
+        {0, DefaultSymbolSize},  // Wild
+        {1, DefaultSymbolSize},  // Jack-in-the-box
+        {2, DefaultSymbolSize},  // A
+        {3, DefaultSymbolSize},  // K
+        {4, DefaultSymbolSize},  // Q
+        {5, DefaultSymbolSize},  // J
+        {6, DefaultSymbolSize},  // 10
+        {7, DefaultSymbolSize},  // Drum
+        {8, DefaultSymbolSize},  // Ball
+        {9, DefaultSymbolSize}   // Sandbell
     };
 
     // Playback speed per symbol, applied wherever that symbol's clip is assigned.
@@ -93,45 +62,40 @@ public class SlotView : MonoBehaviour
     // spin, so leaving one untouched would silently inherit whatever the previous symbol had set
     // on that slot.
     //
-    // All 10 are listed explicitly. Only the Lamp has been tuned so far (107); the rest sit at the
-    // default until each is retuned against its own clip. The fallback below is only reached if the
-    // backend ever sends an id this table doesn't know about.
+    // All 10 are listed explicitly, all at the default until each is tuned against its own clip.
+    // The fallback below is only reached if the backend ever sends an id this table doesn't know
+    // about.
     private const float DefaultSymbolAnimationSpeed = 20f;
     //Animation Speeds
     private static readonly Dictionary<int, float> SymbolAnimationSpeeds = new Dictionary<int, float>
     {
-        { 0, DefaultSymbolAnimationSpeed },  // Prince
-        { 1, DefaultSymbolAnimationSpeed },  // Princess
-        { 2, DefaultSymbolAnimationSpeed },  // Camel
-        { 3, DefaultSymbolAnimationSpeed },  // Parrot
-        { 4, DefaultSymbolAnimationSpeed },  // Turban
-        { 5, DefaultSymbolAnimationSpeed },  // Carpet
-        { 6, DefaultSymbolAnimationSpeed },  // Sword
-        { 7, DefaultSymbolAnimationSpeed },  // Potion
-        { 8, DefaultSymbolAnimationSpeed },  // Genie
-        { 9, 107f }   // Lamp
+        { 0, DefaultSymbolAnimationSpeed },  // Wild
+        { 1, DefaultSymbolAnimationSpeed },  // Jack-in-the-box
+        { 2, DefaultSymbolAnimationSpeed },  // A
+        { 3, DefaultSymbolAnimationSpeed },  // K
+        { 4, DefaultSymbolAnimationSpeed },  // Q
+        { 5, DefaultSymbolAnimationSpeed },  // J
+        { 6, DefaultSymbolAnimationSpeed },  // 10
+        { 7, DefaultSymbolAnimationSpeed },  // Drum
+        { 8, DefaultSymbolAnimationSpeed },  // Ball
+        { 9, DefaultSymbolAnimationSpeed }   // Sandbell
     };
 
     // Internal array built from named sprites
     private Sprite[] symbolSprites;
 
-    // Multiplier value -> the Genie sprite drawn for it, built from the three fields above. Values
-    // left unassigned are absent rather than stored as null, so a miss and an unwired entry are the
-    // same case and both fall back to the plain Genie.
-    private Dictionary<int, Sprite> genieMultiplierSprites;
-
     [Header("Win Animation Sprite Arrays")]
     [Tooltip("Optional per-symbol win-animation frame sequences. Leave any empty until real art exists — animation playback already no-ops safely on an empty list.")]
-    [SerializeField] private List<Sprite> animSpritesPrince;         // ID: 0
-    [SerializeField] private List<Sprite> animSpritesPrincess;       // ID: 1
-    [SerializeField] private List<Sprite> animSpritesCamel;          // ID: 2
-    [SerializeField] private List<Sprite> animSpritesParrot;         // ID: 3
-    [SerializeField] private List<Sprite> animSpritesTurban;         // ID: 4
-    [SerializeField] private List<Sprite> animSpritesCarpet;         // ID: 5
-    [SerializeField] private List<Sprite> animSpritesSword;          // ID: 6
-    [SerializeField] private List<Sprite> animSpritesPotion;         // ID: 7
-    [SerializeField] private List<Sprite> animSpritesGenie;          // ID: 8
-    [SerializeField] private List<Sprite> animSpritesLamp;           // ID: 9
+    [SerializeField] private List<Sprite> animSpritesWild;           // ID: 0
+    [SerializeField] private List<Sprite> animSpritesJackInTheBox;   // ID: 1
+    [SerializeField] private List<Sprite> animSpritesA;              // ID: 2
+    [SerializeField] private List<Sprite> animSpritesK;              // ID: 3
+    [SerializeField] private List<Sprite> animSpritesQ;              // ID: 4
+    [SerializeField] private List<Sprite> animSpritesJ;              // ID: 5
+    [SerializeField] private List<Sprite> animSpritesTen;            // ID: 6
+    [SerializeField] private List<Sprite> animSpritesDrum;           // ID: 7
+    [SerializeField] private List<Sprite> animSpritesBall;           // ID: 8
+    [SerializeField] private List<Sprite> animSpritesSandbell;       // ID: 9
 
     // Internal array of animation sprite lists
     private List<Sprite>[] animationSpriteArrays;
@@ -151,7 +115,7 @@ public class SlotView : MonoBehaviour
 
     // Must match the actual icon pitch in the scene. Drives the spin loop's travel distance, which
     // has to be a whole number of pitches or the loop's wrap-around is visible.
-    private float symbolHeight = 175f;
+    private float symbolHeight = 245f;
 
     [Header("Spin Settings")]
     [SerializeField] private float spinSpeed = 6000f;
@@ -252,12 +216,6 @@ public class SlotView : MonoBehaviour
     // drop the dim out from under it. Nothing sets it today; kept like dimHeld.
     private bool featureDimHeld;
 
-    // This spin's Genies and the multiplier each one carries, as flat index -> value. Captured when
-    // the reels are told to stop, because the landing write runs per reel off each one's own stop,
-    // and by the time the last reel lands the controller may already have consumed and cleared
-    // lastResult, so it is not read at draw time.
-    private readonly Dictionary<int, int> landedGenieMultipliers = new Dictionary<int, int>();
-
     // Ids the scroll buffer is allowed to pick from. Built once and cached, since gameConfig doesn't
     // change after init and this is read on every buffer icon of every spin. See
     // EnsureFillerSymbolIds for what would justify excluding a symbol from it.
@@ -279,7 +237,7 @@ public class SlotView : MonoBehaviour
     // in the server payload, in currentDisplayMatrix, and in each reel's displayImages list.
     internal int RowCount => (gameManager != null && gameManager.gameConfig != null) ? gameManager.gameConfig.rowCount : 3;
 
-    // -1 rather than 0 when unknown, deliberately: 0 is a real symbol (the Prince), so a literal
+    // -1 rather than 0 when unknown, deliberately: 0 is a real symbol (the Wild itself), so a literal
     // fallback would silently match it before init.
     private int WildSymbolId => (gameManager != null && gameManager.gameConfig != null)
         ? gameManager.gameConfig.wildSymbolId
@@ -385,22 +343,16 @@ public class SlotView : MonoBehaviour
     {
         // Build the symbol sprite array from named sprite fields
         symbolSprites = new Sprite[SymbolCount];
-        symbolSprites[0] = spritePrince;
-        symbolSprites[1] = spritePrincess;
-        symbolSprites[2] = spriteCamel;
-        symbolSprites[3] = spriteParrot;
-        symbolSprites[4] = spriteTurban;
-        symbolSprites[5] = spriteCarpet;
-        symbolSprites[6] = spriteSword;
-        symbolSprites[7] = spritePotion;
-        symbolSprites[8] = spriteGenie;
-        symbolSprites[9] = spriteLamp;
-
-        // Value-keyed, so built separately from the id table: see the field declarations.
-        genieMultiplierSprites = new Dictionary<int, Sprite>();
-        if (spriteGenie2 != null) genieMultiplierSprites[2] = spriteGenie2;
-        if (spriteGenie3 != null) genieMultiplierSprites[3] = spriteGenie3;
-        if (spriteGenie4 != null) genieMultiplierSprites[4] = spriteGenie4;
+        symbolSprites[0] = spriteWild;
+        symbolSprites[1] = spriteJackInTheBox;
+        symbolSprites[2] = spriteA;
+        symbolSprites[3] = spriteK;
+        symbolSprites[4] = spriteQ;
+        symbolSprites[5] = spriteJ;
+        symbolSprites[6] = spriteTen;
+        symbolSprites[7] = spriteDrum;
+        symbolSprites[8] = spriteBall;
+        symbolSprites[9] = spriteSandbell;
 
         // Validate
         for (int i = 0; i < symbolSprites.Length; i++)
@@ -413,16 +365,16 @@ public class SlotView : MonoBehaviour
 
         // Build the animation sprite arrays (any entry left empty simply won't animate)
         animationSpriteArrays = new List<Sprite>[SymbolCount];
-        animationSpriteArrays[0] = animSpritesPrince;
-        animationSpriteArrays[1] = animSpritesPrincess;
-        animationSpriteArrays[2] = animSpritesCamel;
-        animationSpriteArrays[3] = animSpritesParrot;
-        animationSpriteArrays[4] = animSpritesTurban;
-        animationSpriteArrays[5] = animSpritesCarpet;
-        animationSpriteArrays[6] = animSpritesSword;
-        animationSpriteArrays[7] = animSpritesPotion;
-        animationSpriteArrays[8] = animSpritesGenie;
-        animationSpriteArrays[9] = animSpritesLamp;
+        animationSpriteArrays[0] = animSpritesWild;
+        animationSpriteArrays[1] = animSpritesJackInTheBox;
+        animationSpriteArrays[2] = animSpritesA;
+        animationSpriteArrays[3] = animSpritesK;
+        animationSpriteArrays[4] = animSpritesQ;
+        animationSpriteArrays[5] = animSpritesJ;
+        animationSpriteArrays[6] = animSpritesTen;
+        animationSpriteArrays[7] = animSpritesDrum;
+        animationSpriteArrays[8] = animSpritesBall;
+        animationSpriteArrays[9] = animSpritesSandbell;
     }
 
     private void InitializeReels()
@@ -521,7 +473,7 @@ public class SlotView : MonoBehaviour
             {
                 int symbolId = visibleSymbolIds[row];
 
-                ApplySymbol(reel.displayImages[row], symbolId, manageRaycast: true, flatIndex: row * ReelCount + columnIndex);
+                ApplySymbol(reel.displayImages[row], symbolId, manageRaycast: true);
             }
         }
     }
@@ -535,10 +487,7 @@ public class SlotView : MonoBehaviour
             : DefaultSymbolAnimationSpeed;
     }
 
-    // flatIndex is the cell being drawn, or -1 for a write with no cell behind it (the scroll
-    // buffer). It exists only for the Genie, whose art depends on the
-    // multiplier the server attached to that cell rather than on its symbol id.
-    private Sprite GetSymbolSprite(int symbolId, int flatIndex = -1)
+    private Sprite GetSymbolSprite(int symbolId)
     {
         // Validate symbolId range (0..SymbolCount-1)
         if (symbolId < 0 || symbolId >= symbolSprites.Length)
@@ -546,12 +495,6 @@ public class SlotView : MonoBehaviour
             Debug.LogWarning($"[SlotView] Invalid symbolId {symbolId}, using default sprite 0. Total sprites: {symbolSprites.Length}");
             return symbolSprites[0];
         }
-
-        // Ahead of the id-keyed table, because every Genie shares one id and only the cell says
-        // which multiplier it carries. Returns null for anything that is not a numbered Genie, so
-        // the plain art below stays the default for every other case.
-        Sprite genieSprite = GetGenieMultiplierSprite(symbolId, flatIndex);
-        if (genieSprite != null) return genieSprite;
 
         if (symbolSprites[symbolId] == null)
         {
@@ -562,80 +505,16 @@ public class SlotView : MonoBehaviour
         return symbolSprites[symbolId];
     }
 
-    /// <summary>
-    /// The numbered Genie sprite for one cell, or null when this is not one.
-    ///
-    /// Null is returned — rather than the plain Genie — so the caller can tell "no variant applies"
-    /// from "this is the variant", and every non-Genie write keeps going through the ordinary
-    /// id-keyed path untouched. Null covers four cases, all of them normal: the symbol is not the
-    /// Genie, the write has no cell (flatIndex -1), the server attached no multiplier to that cell,
-    /// or that multiplier's art was never wired.
-    /// </summary>
-    private Sprite GetGenieMultiplierSprite(int symbolId, int flatIndex)
-    {
-        if (flatIndex < 0 || genieMultiplierSprites == null || genieMultiplierSprites.Count == 0) return null;
-
-        // No literal fallback: -1 before init, and -1 can never match a real symbol id.
-        int wildId = WildSymbolId;
-        if (wildId < 0 || symbolId != wildId) return null;
-
-        if (!landedGenieMultipliers.TryGetValue(flatIndex, out int multiplier)) return null;
-
-        return genieMultiplierSprites.TryGetValue(multiplier, out Sprite sprite) ? sprite : null;
-    }
-
-    /// <summary>
-    /// The win animation for the Genie in one cell, picked by the multiplier it landed with.
-    ///
-    /// A cell with a multiplier gets that value's clip, or null when it isn't wired — never the
-    /// plain clip, which would hide the number. Only a Genie the server attached no value to plays
-    /// the plain animSpritesGenie. Null means "no animation": the caller leaves the static sprite up.
-    /// </summary>
-    private List<Sprite> GetGenieAnimFrames(int flatIndex)
-    {
-        if (!landedGenieMultipliers.TryGetValue(flatIndex, out int multiplier)) return animSpritesGenie;
-
-        List<Sprite> frames = multiplier switch
-        {
-            2 => animSpritesGenie2,
-            3 => animSpritesGenie3,
-            4 => animSpritesGenie4,
-            _ => null
-        };
-
-        return (frames != null && frames.Count > 0) ? frames : null;
-    }
-
-    /// <summary>
-    /// Refreshes landedGenieMultipliers from the spin about to be drawn.
-    ///
-    /// Called from every stop path, the two no-reel early-outs included, so a Genie can never be
-    /// drawn carrying the previous spin's number. Clearing unconditionally is the point: a spin with
-    /// no Genie on the board has to wipe the last one's, not leave it behind.
-    /// </summary>
-    private void CaptureLandedGenieMultipliers()
-    {
-        landedGenieMultipliers.Clear();
-
-        var landed = gameManager?.lastResult?.genieMultipliers;
-        if (landed == null) return;
-
-        foreach (var entry in landed) landedGenieMultipliers[entry.Key] = entry.Value;
-    }
-
     // Single place that puts a symbol onto an icon. Sprite and size are set together on purpose:
-    // symbols are drawn at different scales (the Lamp and Genie above all), so each needs its own
+    // symbols can be drawn at different scales (see SymbolSizeOverrides), so each needs its own
     // rect. Because every write goes through here and always sets a size, an icon that showed an
     // oversized symbol is snapped back as soon as it's given any other — no reset pass to maintain
     // and no way for an icon to get stuck oversized.
-    //
-    // flatIndex is passed only by the callers that know which cell they are drawing, and only the
-    // Genie reads it — see GetGenieMultiplierSprite. Left at -1 the behaviour is exactly as before.
-    private void ApplySymbol(Image image, int symbolId, bool manageRaycast = false, int flatIndex = -1)
+    private void ApplySymbol(Image image, int symbolId, bool manageRaycast = false)
     {
         if (image == null) return;
 
-        image.sprite = GetSymbolSprite(symbolId, flatIndex);
+        image.sprite = GetSymbolSprite(symbolId);
 
         // Sizing is art-driven, not role-driven, which is why this reads an id-keyed map. Anything
         // above 175 overlaps its vertical neighbours, which is intentional art bleed, but also means
@@ -799,7 +678,6 @@ public class SlotView : MonoBehaviour
         if (!isSpinning)
         {
             currentDisplayMatrix = resultMatrix;
-            CaptureLandedGenieMultipliers();
             for (int col = 0; col < ReelCount; col++)
             {
                 SetReelSymbols(col, resultMatrix[col], false);
@@ -815,12 +693,11 @@ public class SlotView : MonoBehaviour
     {
         currentDisplayMatrix = resultMatrix;
 
-        // Captured before any reel lands, because each reel's landing write reads it to pick its
-        // Genie art, and the last reel lands on the same frame this sequence reports completion.
-        // Anything else per-cell that the landing write needs belongs here too, for the same reason:
-        // the controller nulls lastResult a frame or two later, so reading it at DRAW time is a race
-        // the last reel routinely loses.
-        CaptureLandedGenieMultipliers();
+        // Anything per-cell that a reel's landing write needs from the spin result has to be
+        // captured here, before any reel lands, and never read at DRAW time: the last reel lands on
+        // the same frame this sequence reports completion, and the controller nulls lastResult a
+        // frame or two later, so a draw-time read is a race the last reel routinely loses. (Gold of
+        // Luck captured its Genie multipliers here for exactly that reason.)
 
         // GameManager.GetSpinDuration() already enforces the minimum spin time before this is
         // ever called, so there's no need for a separate discrete-cycle-count gate here.
@@ -1053,7 +930,6 @@ public class SlotView : MonoBehaviour
         if (!isSpinning)
         {
             currentDisplayMatrix = resultMatrix;
-            CaptureLandedGenieMultipliers();
             for (int col = 0; col < ReelCount; col++)
             {
                 if (col < reelTransforms.Length)
@@ -1159,7 +1035,7 @@ public class SlotView : MonoBehaviour
         // resting icon shows through as a ghost, and an oversized neighbour can poke into the cell.
         // HideWinSlots puts every icon back when the layer comes down.
         symbolImage.DOKill();
-        ApplySymbol(symbolImage, symbolId, flatIndex: row * ReelCount + column);
+        ApplySymbol(symbolImage, symbolId);
         symbolImage.transform.localScale = Vector3.one;
         Color c = symbolImage.color;
         symbolImage.color = new Color(c.r, c.g, c.b, 1f);
@@ -1470,7 +1346,7 @@ public class SlotView : MonoBehaviour
             // winning symbol sitting dark while its neighbours light up.
             slotImage.DOKill();
 
-            ApplySymbol(slotImage, symbolId, flatIndex: flatIndex);
+            ApplySymbol(slotImage, symbolId);
 
             slotImage.transform.localScale = Vector3.one;
             Color c = slotImage.color;
@@ -1488,10 +1364,7 @@ public class SlotView : MonoBehaviour
             // Animate on top of that only if this symbol actually has frames.
             if (symbolId < 0 || symbolId >= animationSpriteArrays.Length) continue;
 
-            // The Genie's clip depends on its multiplier, not just its id — see GetGenieAnimFrames.
-            List<Sprite> animSprites = symbolId == WildSymbolId
-                ? GetGenieAnimFrames(flatIndex)
-                : animationSpriteArrays[symbolId];
+            List<Sprite> animSprites = animationSpriteArrays[symbolId];
 
             if (animSprites == null || animSprites.Count == 0) continue;
 

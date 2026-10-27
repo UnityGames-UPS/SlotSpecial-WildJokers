@@ -1162,7 +1162,7 @@ public class GameManager : MonoBehaviour
 
     internal double GetTotalPay()
     {
-        double activeLine = (gameConfig != null && gameConfig.activeLine > 0) ? gameConfig.activeLine : 50;
+        double activeLine = (gameConfig != null && gameConfig.activeLine > 0) ? gameConfig.activeLine : 20;
         return currentBetAmount * activeLine;
     }
 

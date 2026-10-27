@@ -11,7 +11,7 @@ public class InitData
     public ServerFeatures features;
     public ServerUIData uiData;
     public ServerPlayer player;
-    // Gold of Luck sends no jackpot block. Kept because the platform's separate "jackpot:sync"
+    // Wild Jokers sends no jackpot block. Kept because the platform's separate "jackpot:sync"
     // event reuses these types, and the init-time read is already null-guarded.
     public JackpotData jackpotData;
 }
@@ -65,27 +65,75 @@ public class JackpotOpenPayload
 [Serializable]
 public class ServerGameData
 {
-    // Confirmed against a live init. "lines" is a leftover of the payline backends and arrives
-    // EMPTY; it is read only for the reel count, which falls back to 5.
+    // The 20 paylines, each one row index per reel, left to right, row 0 at the top. Confirmed
+    // against live wins: a win's matchedPositions trace lines[lineIndex] cell for cell. Also read
+    // for the reel count, which falls back to 5.
     public List<List<int>> lines;
     public List<double> bets;
-    // Total bet = the selected bet x this: 0.01 x 50 = 0.50, the cost of every captured spin.
-    public int creditDivisor;
-
-    // The WAYS count (243). Bound for the line-count label ONLY, as GameConfig.waysCount — never a bet
-    // multiplier. Read as the old "lines to multiply the bet by" it would make every bet display and
-    // deduction 4.86x too high; creditDivisor is the multiplier.
+    // The number of paylines (20), and the bet multiplier: every line is always played, so total bet
+    // = the selected bet x this. Confirmed on every captured spin: at bet 0.01 the result reports a
+    // totalBetAmount of 0.2 and the balance drops by exactly that. There is no creditDivisor or
+    // activeLine in this init.
     public int totalLines;
 }
 
 [Serializable]
 public class ServerFeatures
 {
+    public ServerWildFeature wild;
+    public ServerFreeSpinsFeature freeSpins;
+    public ServerPickBonusFeature ballPickemBonus;
+    public ServerPickBonusFeature sandbellPickBonus;
+
+    // Gold of Luck's features. Wild Jokers never sends them, so they arrive null; kept only until the
+    // Genie Wheel code that still reads them is removed.
     public ServerGenieWheelFeature genieWheel;
     public ServerGenieWildFeature genieWild;
     public ServerFreeGamesFeature freeGames;
 }
 
+// Every feature names its symbol. The ids are nullable so a missing one reads as "not sent" rather
+// than 0, which is a real symbol (the Wild).
+[Serializable]
+public class ServerWildFeature
+{
+    public int? symbolId;
+    // "enabled" is sent and deliberately unbound: the Wild has no round to switch off.
+}
+
+[Serializable]
+public class ServerFreeSpinsFeature
+{
+    public bool enabled;
+    public int? symbolId;          // the Drum
+    public int spinsCount;         // spins awarded per trigger: 10
+    // Zero-based: one Drum on each of these reels triggers. [1,2,3] = reels 2, 3 and 4.
+    public List<int> triggerReels;
+    // Zero-based. Drums on these reels earn a near-miss respin of respinReel. The backend currently
+    // respins with both Drums on reel 1 and none on reel 2, which cannot lead to a trigger — reported.
+    public List<int> nearMissReels;
+    public int respinReel;
+}
+
+// Ball Pick'em and Sandbell Pick send the same shape. How a round plays is still unconfirmed.
+[Serializable]
+public class ServerPickBonusFeature
+{
+    public bool enabled;
+    public int? symbolId;          // the Ball or the Sandbell
+    // 3. Whether that counts cells or reels is unconfirmed — two scatters can land on one reel.
+    public int triggerCount;
+    public int respinReel;
+    // Whether these are multiples of the total bet or the line bet is unconfirmed.
+    public List<double> availablePrizes;
+    public double maxWinMultiplier;
+
+    // Sent and deliberately unbound: "nearMissReels", "nearMissCountRange" and "triggerProbability".
+    // Server-side maths the client has no use for, and the near-miss range contradicts triggerCount
+    // (2 to 4 when 3 already triggers) — raised with the backend.
+}
+
+// Gold of Luck — absent from Wild Jokers.
 [Serializable]
 public class ServerGenieWheelFeature
 {
@@ -112,6 +160,7 @@ public class ServerWheelSlice
     public int freeGames;
 }
 
+// Gold of Luck — absent from Wild Jokers.
 [Serializable]
 public class ServerGenieWildFeature
 {
@@ -122,6 +171,7 @@ public class ServerGenieWildFeature
     public List<int> multipliers;
 }
 
+// Gold of Luck — absent from Wild Jokers.
 [Serializable]
 public class ServerFreeGamesFeature
 {
@@ -149,16 +199,17 @@ public class PaylineData
 public class ServerSymbolInfo
 {
     public int id;
-    public string name;         // "Prince", "Genie", "Lamp", ... — display only, never used to find a role
+    public string name;         // "Wild", "Jack-in-the-box", "Drum", ... — display only, never used to find a role
     // "high", "low", "wild" or "scatter". This is what tells the special symbols apart; the init
-    // sends no isSpecialSymbol flag and no displayName. "description" only repeats the group.
+    // sends no isSpecialSymbol flag and no displayName. Three symbols are scatters, so which feature
+    // each one belongs to comes from the features' symbolId. "description" only repeats the group.
     public string group;
-    // 3 on every symbol, wild and scatter included, where it means nothing.
-    public int minMatch;
-    // ASCENDING from a minMatch match: index 0 = 3-of-a-kind, 1 = 4, 2 = 5. Credits, not cash — one
-    // credit is the selected bet. Empty on Genie and Lamp. The converter reverses it, because the
-    // client works descending from a full-reel match.
-    public List<double> payout;
+    // The paytable, ASCENDING and ENDING at a full-reel match: with 5 reels, index 0 = 2-of-a-kind,
+    // 1 = 3, 2 = 4, 3 = 5. A 0 means that count doesn't pay — only Jack-in-the-box pays on 2. Credits,
+    // not cash: one credit is the selected (per-line) bet, so J's 5-of-a-kind (100) pays 1.00 at bet
+    // 0.01, confirmed. All zeros on the Wild and the three scatters. The converter reverses it,
+    // because the client works descending from a full-reel match.
+    public List<double> multiplier;
 }
 
 [Serializable]
@@ -192,48 +243,49 @@ public class ServerPlayerBalance
 [Serializable]
 public class ServerPayload
 {
-    // ONLY the ways subtotal. On a spin whose Lamps triggered the wheel this is short of what was
-    // paid — the wheel prize is not in it. Never display it; see grandTotalWin.
+    // The line wins' total. Equal to grandTotalWin on every captured spin, but grandTotalWin is the
+    // figure to display — a feature's prize may land in the gap.
     public double winAmount;
-    // One entry per winning SYMBOL, not per way — waysCount says how many ways it covers.
-    public List<ServerWaysWin> waysWins;
+    // One entry per winning PAYLINE. Lines can share cells: three Jack-in-the-box 2-of-a-kinds on
+    // lines 3, 9 and 13 all used the same two cells.
+    public List<ServerLineWin> lineWins;
 
-    // Every Genie on the board, keyed "row,col" (comma-separated), value the
-    // multiplier that Genie carries. Sent for every Genie whether or not it is part of a win, so it
-    // is a landing-time fact, not a win-time one.
-    public Dictionary<string, int> genieMultipliers;
-
-    public ServerGenieWheelResult genieWheel;
-    public ServerFreeGamesResult freeGames;
-
-    // The spin's total: ways plus wheel prize, and the only figure to display. The balance moves by
-    // exactly this minus the bet (5337.83 -> 5354.33 on a 17.00 win at a 0.50 bet), and free spins
-    // deduct no bet, so there it moves by this alone.
+    // The spin's total, and the only figure to display. The balance moves by exactly this minus the
+    // total bet (6066.65 -> 6066.50 on a 0.05 win at a 0.20 bet).
     public double grandTotalWin;
 
-    // "netReturnRatio" (grandTotalWin over total bet) is sent and deliberately unbound: the
-    // controller already derives the same ratio from the win and the total bet.
+    // Sent and deliberately unbound:
+    //  - "betAmountPerLine" and "totalBetAmount" (0.01 and 0.2 at the lowest bet): the client
+    //    already knows its own bet.
+    //  - "nearMissRespin", "isRespin" and "respinCount": the near-miss respin, bound when that
+    //    feature is built. "matrix" is already the board after any respin.
+    //  - "netReturnRatio" (grandTotalWin over total bet): the controller derives the same ratio.
+
+    // Gold of Luck's blocks. Wild Jokers never sends them, so they arrive null and read as "nothing
+    // happened"; kept only until the Genie Wheel code that still reads them is removed.
+    public Dictionary<string, int> genieMultipliers;
+    public ServerGenieWheelResult genieWheel;
+    public ServerFreeGamesResult freeGames;
 }
 
 [Serializable]
-public class ServerWaysWin
+public class ServerLineWin
 {
-    public int symbolId;
-    public int matchCount;    // reels matched from the left: 3, 4 or 5
-    public int waysCount;     // how many ways this symbol wins on
-    // Every cell that takes part, Genies standing in for the symbol included, one entry each,
-    // ordered by column then row. This is the union across all the ways, not one path.
+    // Zero-based index into the init's lines. Confirmed: lineIndex 18's matchedPositions are
+    // lines[18] = [2,0,0,0,2], cell for cell.
+    public int lineIndex;
+    // The paying cells, left to right, one per matched reel.
     public List<ServerCell> matchedPositions;
-    // Already inside winInCash. Kept so the view can show "x2" without dividing anything back out.
-    // A double, not an int: it is averaged across the ways, so a Genie in only some of them makes it
-    // fractional (an x2 Genie in 2 of 4 ways sends 1.5). As an int, that failed the whole parse and
-    // the reels spun forever.
-    public double genieMultiplierProduct;
+    // The symbol in each matched cell, Wilds included: [0,6,6] pays as three 10s.
+    public List<int> symbolIds;
+    public int matchLength;        // reels matched from the left: 2 to 5
+    // Already inside winInCash; 1 on every captured win.
+    public double lineMultiplier;
+    // The line's win in cash: basePayout x lineMultiplier x the per-line bet.
     public double winInCash;
 
-    // Sent and deliberately unbound: basePayout, winInCredits, winType ("WAYS_MATCH" is the only
-    // value seen) and appliedMultiplier, which has read 1 on every captured win. winInCash is
-    // basePayout x waysCount x genieMultiplierProduct, already converted, so nothing needs redoing.
+    // "basePayout" and "winInCredits" are sent and deliberately unbound: winInCash already carries
+    // them, converted.
 }
 
 [Serializable]
@@ -243,6 +295,7 @@ public class ServerCell
     public int col;
 }
 
+// Gold of Luck — absent from Wild Jokers.
 [Serializable]
 public class ServerGenieWheelResult
 {
@@ -267,6 +320,7 @@ public class ServerWheelResult
     public double winInCash;
 }
 
+// Gold of Luck — absent from Wild Jokers.
 [Serializable]
 public class ServerFreeGamesResult
 {
@@ -318,28 +372,34 @@ public class GameConfig
     // Every row the server sends is live and pays.
     public int rowCount = 3;
 
-    // Total bet = selected bet x activeLine. Named for the payline games; here it is the init's
-    // creditDivisor (50), and has nothing to do with the 243 ways.
-    public int activeLine = 50;
+    // Total bet = selected bet x activeLine: the init's totalLines (20), since every payline is always
+    // played. Also what the line-count label shows.
+    public int activeLine = 20;
 
-    // The ways count (243), for the line-count label only — never multiply anything by it. 0 when the
-    // init doesn't send it, and the label then keeps its scene text.
-    public int waysCount;
+    // The paylines, one row index per reel, row 0 at the top. A win's WinLine.lineId indexes this.
+    public List<List<int>> paylines;
 
     public List<double> availableBets;
     public List<SymbolInfo> symbols;
 
-    // The Genie Wheel's slices, sorted by sliceIndex. Empty means the init carried none.
+    // Gold of Luck's Genie Wheel slices. Always empty for Wild Jokers; kept until the Genie Wheel code
+    // that reads it is removed.
     public List<WheelSlice> wheelSlices;
-    // The multipliers a Genie can carry, for describing the feature.
-    public List<int> wildMultipliers;
 
     // Resolved from the init symbol table. -1 means "not present", so an unresolved role can never
     // collide with a real symbol id the way a 0 default would — and -1 stays meaningful downstream:
     // SocketIOManager keeps both off the pre-spin placeholder board, and reads -1 as "no such
     // symbol, leave nothing out".
     public int wildSymbolId = -1;
+    // A Gold of Luck leftover: that game had one scatter, Wild Jokers has three, so this resolves to
+    // whichever comes last in the symbol table (the Sandbell). Still read by the scatter anticipation
+    // and trigger code, which is reworked with the features — new code uses the per-feature ids below.
     public int scatterSymbolId = -1;
+
+    // Each feature's symbol, from features.<feature>.symbolId. -1 when the init doesn't name one.
+    public int freeSpinsSymbolId = -1;      // the Drum
+    public int ballBonusSymbolId = -1;      // the Ball
+    public int sandbellBonusSymbolId = -1;  // the Sandbell
 }
 
 [Serializable]
@@ -347,16 +407,18 @@ public class SymbolInfo
 {
     public int id;
     public string name;
-    // Descending from a full-reel match: index 0 = reelCount-of-a-kind, 1 = one fewer, and so on.
-    // In credits — multiply by the selected bet for cash.
+    // Descending from a full-reel match: index 0 = reelCount-of-a-kind, 1 = one fewer, and so on,
+    // ending at minMatch — counts that don't pay are left off. In credits — multiply by the selected
+    // (per-line) bet for cash.
     public List<double> multipliers;
 
     public bool isWild;
     public bool isScatter;
-    // True for the Genie and the Lamp.
+    // True for the Wild and the three scatters.
     public bool isSpecial;
 
-    // Fewest matching symbols that pay. 0 when the symbol has no paytable (Genie, Lamp).
+    // Fewest matching symbols that pay: 2 for Jack-in-the-box, 3 for the rest. 0 when the symbol has
+    // no paytable (the Wild and the scatters).
     public int minMatch;
 }
 
@@ -397,46 +459,42 @@ public class SpinResult
     // Column-major: [reel][row], the transpose of the server's row-major matrix.
     public List<List<int>> resultMatrix;
 
-    // Everything the spin paid — ways plus wheel prize — from grandTotalWin. This is the figure to
-    // show and the one the balance moved by.
+    // Everything the spin paid, from grandTotalWin. This is the figure to show and the one the
+    // balance moved by.
     public double winAmount;
-    // The ways wins alone. The gap to winAmount is the wheel prize, which is presented separately.
-    public double waysWinAmount;
+    // The line wins alone. Gold of Luck's Genie Wheel withholds the gap to winAmount (its prize) and
+    // presents it separately; for Wild Jokers the two have been equal on every captured spin.
+    public double lineWinAmount;
 
-    // One entry per winning symbol.
+    // One entry per winning payline.
     public List<WinLine> winLines;
     public PlayerData playerData;
 
-    // Always present — the server sends the free-games block on every spin, in or out of a round.
+    // Gold of Luck's feature results. Wild Jokers never sends them, so these are always empty or
+    // untriggered; kept until the Genie Wheel code that reads them is removed.
     public FreeGameData freeGame;
-
-    // Every Genie on the board: flat index (row * reelCount + col) -> its multiplier. Empty when
-    // there is none. Populated whether or not the Genie is part of a win.
     public Dictionary<int, int> genieMultipliers;
-
-    // Always present. triggered is false on almost every spin.
     public GenieWheelData genieWheel;
 }
 
 /// <summary>
-/// One winning symbol's ways win. Named for the payline games it replaced, whose one-line-at-a-time
-/// presentation still consumes it.
+/// One winning payline.
 /// </summary>
 [Serializable]
 public class WinLine
 {
-    // Position in the response's waysWins, not a payline number — there are no paylines.
+    // The payline that won: an index into GameConfig.paylines.
     public int lineId;
+    // The symbol the line pays for. A Wild standing in never counts here, so a line of Wild, 10, 10
+    // reads as the 10.
     public int symbolId;
-    // Flat indices into the active grid: row * reelCount + col. Every cell in the win.
+    // Flat indices into the active grid: row * reelCount + col. The paying cells, left to right.
     public List<int> positions;
     public double winAmount;
 
-    // Reels matched from the left, and how many ways the symbol wins on.
+    // Reels matched from the left: 2 to 5.
     public int matchCount;
-    public int waysCount;
-    // Product of the Genies in the win, already inside winAmount. 1 when there is none. Can be
-    // fractional — see ServerWaysWin.genieMultiplierProduct.
+    // Already inside winAmount. 1 when there is none.
     public double multiplier;
 }
 
@@ -515,35 +573,29 @@ public enum WinPopupType
 /// </summary>
 public static class InitDataConverter
 {
-    // Used only if the init omits creditDivisor. Total bet = selected bet x 50, which matches every
-    // captured balance: each non-winning spin at bet 0.01 cost exactly 0.50.
-    private const int FallbackBetMultiplier = 50;
+    // Used only if the init carries neither totalLines nor any lines. Total bet = selected bet x 20,
+    // which matches every captured balance: each spin at bet 0.01 cost exactly 0.20.
+    private const int FallbackBetMultiplier = 20;
 
     internal static GameConfig ConvertToGameConfig(InitData serverData)
     {
         var gameData = serverData?.gameData;
         var serverSymbols = serverData?.uiData?.paylines?.symbols;
+        var features = serverData?.features;
 
         int reelCount = (gameData?.lines != null && gameData.lines.Count > 0 && gameData.lines[0] != null)
             ? gameData.lines[0].Count
             : 5;
 
-        int betMultiplier = gameData != null && gameData.creditDivisor > 0 ? gameData.creditDivisor : FallbackBetMultiplier;
-        if (gameData == null || gameData.creditDivisor <= 0)
-        {
-            UnityEngine.Debug.LogError($"[InitDataConverter] Init carried no creditDivisor — total bet assumed to be bet x {FallbackBetMultiplier}.");
-        }
-
         var config = new GameConfig
         {
             reelCount = reelCount,
             rowCount = 3,
-            activeLine = betMultiplier,
-            waysCount = gameData != null && gameData.totalLines > 0 ? gameData.totalLines : 0,
+            activeLine = ResolveBetMultiplier(gameData),
+            paylines = ConvertPaylines(gameData?.lines, reelCount, 3),
             availableBets = gameData?.bets,
             symbols = new List<SymbolInfo>(),
-            wheelSlices = ConvertWheelSlices(serverData?.features?.genieWheel),
-            wildMultipliers = serverData?.features?.genieWild?.multipliers ?? new List<int>()
+            wheelSlices = ConvertWheelSlices(features?.genieWheel)
         };
 
         if (config.availableBets == null || config.availableBets.Count == 0)
@@ -564,12 +616,7 @@ public static class InitDataConverter
             // The role comes from "group", never the name.
             string group = (serverSymbol.group ?? string.Empty).Trim().ToLowerInvariant();
 
-            var payout = serverSymbol.payout ?? new List<double>();
-
-            // The wire runs 3-of-a-kind first; the client works descending from a full-reel match,
-            // so reversing here leaves every consumer of multipliers as it was.
-            var multipliers = new List<double>(payout);
-            multipliers.Reverse();
+            var multipliers = ConvertPaytable(serverSymbol, reelCount);
 
             var symbolInfo = new SymbolInfo
             {
@@ -578,7 +625,7 @@ public static class InitDataConverter
                 multipliers = multipliers,
                 isWild = group == "wild",
                 isScatter = group == "scatter",
-                minMatch = payout.Count > 0 ? serverSymbol.minMatch : 0
+                minMatch = multipliers.Count > 0 ? reelCount - multipliers.Count + 1 : 0
             };
             symbolInfo.isSpecial = symbolInfo.isWild || symbolInfo.isScatter;
 
@@ -594,20 +641,116 @@ public static class InitDataConverter
             if (symbolInfo.isScatter) config.scatterSymbolId = symbolInfo.id;
         }
 
+        // The Wild comes from its group above; features.wild.symbolId names it too, so the two are
+        // only cross-checked.
+        int? featureWildId = features?.wild?.symbolId;
+        if (featureWildId.HasValue && featureWildId.Value != config.wildSymbolId)
+        {
+            UnityEngine.Debug.LogError($"[InitDataConverter] features.wild names symbol {featureWildId.Value} but the symbol table's wild is {config.wildSymbolId} — using the symbol table's.");
+        }
+
+        config.freeSpinsSymbolId = ResolveFeatureSymbolId(features?.freeSpins?.symbolId, "freeSpins", config);
+        config.ballBonusSymbolId = ResolveFeatureSymbolId(features?.ballPickemBonus?.symbolId, "ballPickemBonus", config);
+        config.sandbellBonusSymbolId = ResolveFeatureSymbolId(features?.sandbellPickBonus?.symbolId, "sandbellPickBonus", config);
+
         return config;
     }
 
+    // totalLines is the multiplier — confirmed against balances. The line table is the fallback, and
+    // the two are checked against each other, since a mismatch means one of them is wrong.
+    private static int ResolveBetMultiplier(ServerGameData gameData)
+    {
+        int lineCount = gameData?.lines?.Count ?? 0;
+
+        if (gameData != null && gameData.totalLines > 0)
+        {
+            if (lineCount > 0 && lineCount != gameData.totalLines)
+            {
+                UnityEngine.Debug.LogError($"[InitDataConverter] Init says totalLines {gameData.totalLines} but sends {lineCount} lines — total bet uses totalLines.");
+            }
+            return gameData.totalLines;
+        }
+
+        int fallback = lineCount > 0 ? lineCount : FallbackBetMultiplier;
+        UnityEngine.Debug.LogError($"[InitDataConverter] Init carried no totalLines — total bet assumed to be bet x {fallback}.");
+        return fallback;
+    }
+
+    // Kept as sent, so a win's lineIndex still points at the right line. A malformed line is logged,
+    // not dropped: dropping it would shift every line after it.
+    private static List<List<int>> ConvertPaylines(List<List<int>> lines, int reelCount, int rowCount)
+    {
+        var paylines = lines ?? new List<List<int>>();
+
+        if (paylines.Count == 0)
+        {
+            UnityEngine.Debug.LogError("[InitDataConverter] Init carried no paylines — line wins cannot be traced.");
+            return paylines;
+        }
+
+        for (int i = 0; i < paylines.Count; i++)
+        {
+            var line = paylines[i];
+            if (line == null || line.Count != reelCount || line.Exists(row => row < 0 || row >= rowCount))
+            {
+                UnityEngine.Debug.LogError($"[InitDataConverter] Payline {i} is not {reelCount} rows within 0..{rowCount - 1}: [{(line != null ? string.Join(",", line) : "null")}].");
+            }
+        }
+
+        return paylines;
+    }
+
+    // The wire paytable ascends to a full-reel match; the client works descending from one, so it is
+    // reversed. Counts that don't pay are zeros on the wire (A sends 0 for 2-of-a-kind) and are cut
+    // off the end, so the list stops at the fewest that pay and nothing downstream shows a "pays 0" row.
+    private static List<double> ConvertPaytable(ServerSymbolInfo serverSymbol, int reelCount)
+    {
+        var multipliers = new List<double>(serverSymbol.multiplier ?? new List<double>());
+
+        if (multipliers.Count > reelCount)
+        {
+            UnityEngine.Debug.LogError($"[InitDataConverter] Symbol id {serverSymbol.id} sends {multipliers.Count} payouts for {reelCount} reels — the extra short counts are ignored.");
+        }
+
+        multipliers.Reverse();
+        if (multipliers.Count > reelCount) multipliers.RemoveRange(reelCount, multipliers.Count - reelCount);
+        while (multipliers.Count > 0 && multipliers[multipliers.Count - 1] <= 0) multipliers.RemoveAt(multipliers.Count - 1);
+
+        return multipliers;
+    }
+
+    // A feature's symbol, checked against the symbol table. Missing or unknown reads as -1, never 0,
+    // which is the Wild.
+    private static int ResolveFeatureSymbolId(int? symbolId, string featureName, GameConfig config)
+    {
+        if (!symbolId.HasValue)
+        {
+            UnityEngine.Debug.LogError($"[InitDataConverter] features.{featureName} names no symbolId — its trigger symbol is unknown.");
+            return -1;
+        }
+
+        SymbolInfo symbol = config.symbols.Find(s => s.id == symbolId.Value);
+        if (symbol == null)
+        {
+            UnityEngine.Debug.LogError($"[InitDataConverter] features.{featureName} names symbol {symbolId.Value}, which is not in the symbol table.");
+            return -1;
+        }
+
+        if (!symbol.isScatter)
+        {
+            UnityEngine.Debug.LogError($"[InitDataConverter] features.{featureName} names symbol {symbolId.Value} ('{symbol.name}'), which is not a scatter.");
+        }
+
+        return symbolId.Value;
+    }
+
     // Sorted by sliceIndex so a slice's place in the list is its index, whatever order the server
-    // sent them in. Empty and loud when the init carried none: the wheel cannot be drawn without them.
+    // sent them in. Gold of Luck only: Wild Jokers has no wheel, so an empty list is the normal case.
     private static List<WheelSlice> ConvertWheelSlices(ServerGenieWheelFeature wheel)
     {
         var slices = new List<WheelSlice>();
 
-        if (wheel?.segments == null || wheel.segments.Count == 0)
-        {
-            UnityEngine.Debug.LogError("[InitDataConverter] Init carried no Genie Wheel slices — the wheel cannot be drawn. Check the array's name in features.genieWheel.");
-            return slices;
-        }
+        if (wheel?.segments == null || wheel.segments.Count == 0) return slices;
 
         foreach (var serverSlice in wheel.segments)
         {
@@ -668,9 +811,9 @@ public static class InitDataConverter
     {
         var payload = serverResponse?.payload;
 
-        // grandTotalWin is the spin's total — ways and wheel prize together — and passes straight
-        // through. payload.winAmount is the ways subtotal only, so it is kept separately and never
-        // used as the figure to show. Nothing is summed here.
+        // grandTotalWin is the spin's total and passes straight through. payload.winAmount is the line
+        // wins alone, so it is kept separately and never used as the figure to show. Nothing is
+        // summed here.
         double totalWin = payload?.grandTotalWin ?? 0;
         double newBalance = serverResponse?.player?.balance ?? CalculateNewBalance(currentBalance, totalWin);
 
@@ -678,8 +821,8 @@ public static class InitDataConverter
         {
             resultMatrix = ConvertMatrixToColumns(serverResponse?.matrix, gameConfig),
             winAmount = totalWin,
-            waysWinAmount = payload?.winAmount ?? 0,
-            winLines = ConvertWaysWins(payload?.waysWins, gameConfig),
+            lineWinAmount = payload?.winAmount ?? 0,
+            winLines = ConvertLineWins(payload?.lineWins, gameConfig),
 
             playerData = new PlayerData
             {
@@ -844,26 +987,26 @@ public static class InitDataConverter
         return matrix;
     }
 
-    // One WinLine per winning symbol. The server already says which cells take part and which symbol
-    // paid, so unlike the payline games nothing is rebuilt from a line table.
-    private static List<WinLine> ConvertWaysWins(List<ServerWaysWin> waysWins, GameConfig gameConfig)
+    // One WinLine per winning payline. The server already says which cells pay and what is in them,
+    // so nothing is rebuilt from the line table.
+    private static List<WinLine> ConvertLineWins(List<ServerLineWin> lineWins, GameConfig gameConfig)
     {
         var winLines = new List<WinLine>();
-        if (waysWins == null) return winLines;
+        if (lineWins == null) return winLines;
 
-        for (int i = 0; i < waysWins.Count; i++)
+        for (int i = 0; i < lineWins.Count; i++)
         {
-            var waysWin = waysWins[i];
-            if (waysWin == null) continue;
+            var lineWin = lineWins[i];
+            if (lineWin == null) continue;
 
             var flatPositions = new List<int>();
-            if (waysWin.matchedPositions != null)
+            if (lineWin.matchedPositions != null)
             {
-                foreach (var cell in waysWin.matchedPositions)
+                foreach (var cell in lineWin.matchedPositions)
                 {
                     if (cell == null) continue;
 
-                    if (TryGetFlatIndex(cell.row, cell.col, gameConfig, $"waysWins[{i}] cell ({cell.row},{cell.col})", out int flatIndex))
+                    if (TryGetFlatIndex(cell.row, cell.col, gameConfig, $"lineWins[{i}] cell ({cell.row},{cell.col})", out int flatIndex))
                     {
                         flatPositions.Add(flatIndex);
                     }
@@ -872,19 +1015,34 @@ public static class InitDataConverter
 
             winLines.Add(new WinLine
             {
-                lineId = i,
-                symbolId = waysWin.symbolId,
+                lineId = lineWin.lineIndex,
+                symbolId = GetPayingSymbolId(lineWin.symbolIds, gameConfig),
                 positions = flatPositions,
-                winAmount = waysWin.winInCash,
-                matchCount = waysWin.matchCount,
-                waysCount = waysWin.waysCount,
+                winAmount = lineWin.winInCash,
+                matchCount = lineWin.matchLength,
                 // A missing field deserializes as 0, which would read as "pays nothing"; treat it
-                // as no multiplier. Never clamps a real value: every way is x1 or more.
-                multiplier = Math.Max(1.0, waysWin.genieMultiplierProduct)
+                // as no multiplier. Never clamps a real value: every line is x1 or more.
+                multiplier = Math.Max(1.0, lineWin.lineMultiplier)
             });
         }
 
         return winLines;
+    }
+
+    // The symbol a line pays for: the first matched symbol that isn't the Wild, since a Wild standing
+    // in is listed as itself ([0,6,6] pays as 10s). A line of nothing but Wilds pays for the Wild.
+    // -1 when the server listed no symbols.
+    private static int GetPayingSymbolId(List<int> symbolIds, GameConfig gameConfig)
+    {
+        if (symbolIds == null || symbolIds.Count == 0) return -1;
+
+        int wildId = gameConfig != null ? gameConfig.wildSymbolId : -1;
+        foreach (int id in symbolIds)
+        {
+            if (id != wildId) return id;
+        }
+
+        return symbolIds[0];
     }
 
     private static List<List<int>> GenerateDefaultMatrix(int reelCount, int rowCount)

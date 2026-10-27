@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 85f45b3a3d7e94e219c2171297f0c7e4
+guid: a8c81ca4e0501406489e390dfe9cfb44
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 4855796935591688104
-    second: LOGO_0
+      213: 6400526195771273463
+    second: wildjokers_logo1_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -46,7 +46,7 @@ TextureImporter:
   nPOTScale: 0
   lightmap: 0
   compressionQuality: 50
-  spriteMode: 1
+  spriteMode: 2
   spriteExtrude: 1
   spriteMeshType: 1
   alignment: 0
@@ -126,13 +126,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: LOGO_0
+      name: wildjokers_logo1_0
       rect:
         serializedVersion: 2
-        x: 0
-        y: 0
-        width: 597
-        height: 291
+        x: 27
+        y: 317
+        width: 951
+        height: 412
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -141,8 +141,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 8a77f57f591436340800000000000000
-      internalID: 4855796935591688104
+      spriteID: 7f07782e9ac33d850800000000000000
+      internalID: 6400526195771273463
       vertices: []
       indices: 
       edges: []
@@ -151,7 +151,7 @@ TextureImporter:
     customData: 
     physicsShape: []
     bones: []
-    spriteID: 5e97eb03825dee720800000000000000
+    spriteID: 
     internalID: 0
     vertices: []
     indices: 
@@ -161,7 +161,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      LOGO_0: 4855796935591688104
+      wildjokers_logo1_0: 6400526195771273463
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
