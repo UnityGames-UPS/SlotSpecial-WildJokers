@@ -75,18 +75,6 @@ public class AudioManager : MonoBehaviour
     [Tooltip("The free-games congratulations panel opening.")]
     [SerializeField] private AudioClip clipCongratulations;
 
-    [Tooltip("The Genie Wheel's Winner panel opening — after a cash landing, and at the end of the free-games round.")]
-    [SerializeField] private AudioClip clipWinner;
-
-    [Tooltip("Start pressed: the smoke sweeps over the wheel and the wedges light up.")]
-    [SerializeField] private AudioClip clipWheelSweep;
-
-    [Tooltip("The wheel's result spin. Cut the moment the wheel lands, so it can be longer than the spin.")]
-    [SerializeField] private AudioClip clipWheelSpin;
-
-    [Tooltip("The wheel landing on its slice, with the winning-wedge sparkle.")]
-    [SerializeField] private AudioClip clipWheelWin;
-
     [Tooltip("The free-games congratulations panel closing.")]
     [SerializeField] private AudioClip clipCongratsClose;
 
@@ -96,9 +84,6 @@ public class AudioManager : MonoBehaviour
     [Tooltip("The big-win popup's sound (huge win.wav). Plays ONCE as the popup opens, and is cut when the popup " +
              "closes — on Take or at the auto-close. While unassigned, the old looping clipBigWin plays instead.")]
     [SerializeField] private AudioClip clipHugeWin;
-
-    [Tooltip("The Genie Wheel feature's music. Replaces the main track from the first full-screen Genie animation until the board is reset to base — through the free spins too, when the wheel awards them.")]
-    [SerializeField] private AudioClip clipWheelBg;
 
     // A music switch dips rather than overlaps: there is one music source, so the old track fades out
     // over the first half and the new one starts and fades in over the second.
@@ -194,13 +179,9 @@ public class AudioManager : MonoBehaviour
         source.loop = false;
     }
 
-    // 1. Game Main BG. Starts instantly at load; coming back from the Genie Wheel's music it fades
-    // across and restarts the main track from the beginning (owner).
+    // 1. Game Main BG. Starts instantly at load; coming back from a feature's music it fades across
+    // and restarts the main track from the beginning (owner).
     internal void PlayBgMusic() => SwitchMusic(clipGameMainBg);
-
-    // The Genie Wheel feature's music, from the first full-screen Genie animation until the board is
-    // reset to base. Free spins awarded by the wheel play under it too.
-    internal void PlayWheelBg() => SwitchMusic(clipWheelBg);
 
     // The one way the music track changes. Already playing that track: nothing happens, so it never
     // restarts mid-play. Nothing playing yet: starts straight away. Otherwise the 0.5 s dip. A missing
@@ -270,7 +251,7 @@ public class AudioManager : MonoBehaviour
         PlayUISound(clipMaxBetReached);
     }
 
-    // 4. Bonus-trigger stinger (the Lamps triggering the Genie Wheel) — a one-shot.
+    // 4. Bonus-trigger stinger (scatters triggering a feature) — a one-shot.
     internal void PlayScatterTrigger()
     {
         PlayUISound(clipScatterTrigger);
@@ -311,7 +292,7 @@ public class AudioManager : MonoBehaviour
         return clip != null && (clip == clipHugeWin || clip == clipBigWin);
     }
 
-    // 6. Stop / Take / AutoplayStop / WheelStart Btn Sound
+    // 6. Stop / Take / AutoplayStop / FeatureStart Btn Sound
     internal void PlayPrimaryActionButton()
     {
         PlayUISound(clipPrimaryActionButton != null ? clipPrimaryActionButton : clipGeneralButtonClick);
@@ -397,31 +378,6 @@ public class AudioManager : MonoBehaviour
 
     // 18. Gold of Luck cues.
     internal void PlayCongratulations() => PlayUISound(clipCongratulations);
-    internal void PlayWinner()     => PlayUISound(clipWinner);
-    internal void PlayWheelSweep() => PlayUISound(clipWheelSweep);
-    internal void PlayWheelWin()   => PlayUISound(clipWheelWin);
-
-    // The wheel spin is a DURATION sound, like the reel spin: it has to stop the instant the wheel
-    // lands, which a one-shot cannot do. It borrows spinLoopSource, the reel spin's own source — the
-    // two can never overlap, because the reels are always at rest while the wheel spins. Not looped:
-    // the clip is longer than the spin and is cut at landing, so a loop would only ever be heard if
-    // the spin were tuned longer than the clip.
-    internal void PlayWheelSpin()
-    {
-        if (!_sfxEnabled || spinLoopSource == null || clipWheelSpin == null) return;
-
-        spinLoopSource.clip   = clipWheelSpin;
-        spinLoopSource.loop   = false;
-        spinLoopSource.volume = _sfxVolume;
-        spinLoopSource.Play();
-    }
-
-    // Safe to call when nothing is playing.
-    internal void StopWheelSpin()
-    {
-        StopSource(spinLoopSource);
-    }
-
     internal void PlayCongratsClose() => PlayUISound(clipCongratsClose);
 
     // Scatter anticipation is a DURATION sound: it runs while reels are held and stops when the last

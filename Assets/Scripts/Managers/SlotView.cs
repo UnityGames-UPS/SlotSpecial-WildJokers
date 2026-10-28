@@ -954,22 +954,16 @@ public class SlotView : MonoBehaviour
 
     #region Stop Symbol Animations
 
-    // loopCount <= 0 means "animate indefinitely", until something calls KillWinTweens — the next
-    // StartSpin, or ClearTriggerAnimation. Used by the free-spins retrigger, which passes a count.
+    // loopCount <= 0 means "animate indefinitely", until something calls KillWinTweens — normally the
+    // next StartSpin. Used by the free-spins retrigger, which passes a count.
     internal void AnimateAllScatters(int loopCount)
     {
         AnimateScatters(loopCount, playOnce: false);
     }
 
-    // The Genie Wheel trigger: every Lamp plays its clip exactly ONCE, all the way through, and holds
-    // its last frame — no loop, and no timed stop cutting it short. It stays on screen under the first
-    // full-screen Genie animation until the board is cleared beneath that animation's held frame
-    // (ClearTriggerAnimation), so it keeps playing behind the Genie rather than ending before it.
-    internal void PlayAllScattersOnce()
-    {
-        AnimateScatters(loopCount: 0, playOnce: true);
-    }
-
+    // playOnce runs each clip once to its end and holds the last frame (see AnimateSymbolSingleLoop).
+    // Gold of Luck's Genie Wheel used it for its trigger; nothing does now, but a feature trigger that
+    // should play its scatters' clip exactly once can.
     private void AnimateScatters(int loopCount, bool playOnce)
     {
         if (currentDisplayMatrix == null) return;
@@ -995,14 +989,6 @@ public class SlotView : MonoBehaviour
                 }
             }
         }
-    }
-
-    // The Genie Wheel trigger's Lamp celebration is over and the board is about to be hidden behind
-    // the feature. Clears it now — the clips, the animation layer, the dim, the hidden reel icons —
-    // so SlotObject comes back after the feature showing a clean board, not a frozen celebration.
-    internal void ClearTriggerAnimation()
-    {
-        KillWinTweens();
     }
 
     // Plays one symbol's clip on the animation layer, the same surface AnimateWinPositions uses, so
@@ -1046,8 +1032,8 @@ public class SlotView : MonoBehaviour
         // darkened board — that pairing is what makes a symbol pop — and AnimateAllScatters lowers
         // the dim on its way in via KillWinTweens, so raising it here is what puts it back.
         //
-        // It stays up until KillWinTweens takes it down: ClearTriggerAnimation under the Genie
-        // Wheel's entry animation, or the next StartSpin after a free-spins retrigger.
+        // It stays up until KillWinTweens takes it down — the next StartSpin after a free-spins
+        // retrigger.
         if (winAnimationLayer != null) winAnimationLayer.SetActive(true);
         if (winDimOverlay != null) winDimOverlay.SetActive(true);
 
@@ -1168,9 +1154,6 @@ public class SlotView : MonoBehaviour
         // Decided BEFORE the total plays, because it picks the total's round count. It also skips the
         // line walk afterwards — unless the controller asks for the walk while the total is still
         // playing, which is checked once the total ends (see lineWalkRequested).
-        //
-        // A Genie Wheel trigger spin never reaches here: GameManager takes it over in
-        // PresentSpinOutcome and presents no win.
         bool skipPhase2 = gameManager != null
             && (gameManager.isInFreeSpins || gameManager.isAutoPlaying);
 
@@ -1326,9 +1309,9 @@ public class SlotView : MonoBehaviour
             if (col >= currentDisplayMatrix.Count || matrixRow >= currentDisplayMatrix[col].Count) continue;
             int symbolId = currentDisplayMatrix[col][matrixRow];
 
-            // A guard: the Lamp (scatter) never takes part in a ways win, so if the server ever lists
-            // one among a win's positions it is left dimmed. It has its own presentation via
-            // AnimateAllScatters when the Lamps trigger the Genie Wheel.
+            // A guard: a scatter never takes part in a line win, so if the server ever lists one
+            // among a win's positions it is left dimmed. Scatters get their own presentation when
+            // they trigger a feature. (Still checks only scatterSymbolId — ToDo.md.)
             int winBonusId = (gameManager != null && gameManager.gameConfig != null)
                 ? gameManager.gameConfig.scatterSymbolId
                 : -1;

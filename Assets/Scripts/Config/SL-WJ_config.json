@@ -166,7 +166,7 @@
   },
   "symbols": [
     {
-      "id": 1,
+      "id": 0,
       "name": "Wild",
       "group": "wild",
       "payouts": {
@@ -183,7 +183,7 @@
       }
     },
     {
-      "id": 2,
+      "id": 1,
       "name": "Jack-in-the-box",
       "group": "high",
       "payouts": {
@@ -201,7 +201,7 @@
       }
     },
     {
-      "id": 3,
+      "id": 2,
       "name": "A",
       "group": "high",
       "payouts": {
@@ -218,7 +218,7 @@
       }
     },
     {
-      "id": 4,
+      "id": 3,
       "name": "K",
       "group": "high",
       "payouts": {
@@ -235,7 +235,7 @@
       }
     },
     {
-      "id": 5,
+      "id": 4,
       "name": "Q",
       "group": "low",
       "payouts": {
@@ -252,7 +252,7 @@
       }
     },
     {
-      "id": 6,
+      "id": 5,
       "name": "J",
       "group": "low",
       "payouts": {
@@ -269,7 +269,7 @@
       }
     },
     {
-      "id": 7,
+      "id": 6,
       "name": "10",
       "group": "low",
       "payouts": {
@@ -286,7 +286,7 @@
       }
     },
     {
-      "id": 8,
+      "id": 7,
       "name": "Drum",
       "group": "scatter",
       "payouts": {},
@@ -299,7 +299,7 @@
       }
     },
     {
-      "id": 9,
+      "id": 8,
       "name": "Ball",
       "group": "scatter",
       "payouts": {},
@@ -312,7 +312,7 @@
       }
     },
     {
-      "id": 10,
+      "id": 9,
       "name": "Sandbell",
       "group": "scatter",
       "payouts": {},

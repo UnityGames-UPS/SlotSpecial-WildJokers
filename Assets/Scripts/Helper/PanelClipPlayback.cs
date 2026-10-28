@@ -7,8 +7,8 @@ using DG.Tweening;
 /// The open/close choreography shared by feature panels whose art is a TWO_PHASE ImageAnimation
 /// (an opening, then a loop): scale up from nothing with the clip started a few frames early, cue
 /// work off an exact frame of the opening, and close by playing the opening backwards while the
-/// panel scales down. Used by the congratulations panel (FreeGameView) and the Winner panel
-/// (GenieWheelView).
+/// panel scales down. Used by the congratulations panel (FreeGameView); Gold of Luck's Genie Wheel
+/// Winner panel used it too.
 ///
 /// A plain class, one per panel, created in the owning view's Awake — that is when the panel's
 /// scene scale and the clip's own setup are read, before anything has moved them. The owning view

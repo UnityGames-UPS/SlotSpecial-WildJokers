@@ -6,10 +6,9 @@ using DG.Tweening;
 
 /// <summary>
 /// Presentation for the Free Games round: the congratulations panel that announces the award, and
-/// the "FREE GAME X/Y" counter above the slot. See Assets/Scripts/MD/genieWheel.md §3.7b–3.8.
-///
-/// Free Games is only ever entered from a Genie Wheel landing. The fades around the round and the
-/// Winner panel at its end belong to GenieWheelView; this owns only the two panels above.
+/// the "FREE GAME X/Y" counter above the slot. Gold of Luck's — that round was entered from its
+/// Genie Wheel, which is gone. Wild Jokers' Free Spins (Assets/Scripts/MD/BonusFreeSpins.md) has a
+/// different sequence and will rewrite or replace this.
 ///
 /// View layer only. GameManager drives this via the methods below and receives callbacks when a
 /// sequence finishes — this script never calls back into the game loop. Attach to a GameObject that
@@ -112,7 +111,7 @@ public class FreeGameView : MonoBehaviour
     #region Public API — called by GameManager
 
     /// <summary>
-    /// The wheel landed on free games: the congratulations panel scales up with the awarded count,
+    /// Free games were awarded: the congratulations panel scales up with the awarded count,
     /// plays its opening, shows its titles, holds for titlesPulseHold, and closes by itself.
     /// onClosed fires once it has gone.
     /// </summary>

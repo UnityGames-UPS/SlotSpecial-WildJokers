@@ -57,7 +57,7 @@ public class UIManager : MonoBehaviour
     [Tooltip("Landscape and portrait share these — both buttons use the same art.")]
     [SerializeField] private ButtonSpriteSet spinSprites;
     [SerializeField] private ButtonSpriteSet stopSprites;
-    [Tooltip("Shared by the Genie Wheel Winner panel's Take and the big-win popup Take.")]
+    [Tooltip("Shared by a feature's Take and the big-win popup Take.")]
     [SerializeField] private ButtonSpriteSet takeSprites;
     [SerializeField] private ButtonSpriteSet startSprites;
     [SerializeField] private ButtonSpriteSet autoplayStopSprites;
@@ -567,10 +567,6 @@ public class UIManager : MonoBehaviour
     /// Free games show the round's running total, which GameManager tracks from the server's
     /// per-round figure rather than this spin's own win.
     ///
-    /// A Genie Wheel trigger spin shows its line wins alone while the wheel's prize is held back —
-    /// the first of its two payout stages (genieWheel.md §3.10). The prize is written later, by
-    /// ShowWinAmount, once the feature has presented it.
-    ///
     /// Worth remembering when a feature owns its own payout presentation: returning 0 here is how a
     /// round keeps the win box quiet, so a total it means to count up itself cannot flash in the
     /// corner a moment beforehand.
@@ -579,7 +575,6 @@ public class UIManager : MonoBehaviour
     {
         if (gameManager == null) return result.winAmount;
         if (gameManager.isInFreeSpins) return gameManager.freeSpinsRoundWin;
-        if (gameManager.withholdWheelPrize) return result.lineWinAmount;
         return result.winAmount;
     }
 
@@ -652,16 +647,16 @@ public class UIManager : MonoBehaviour
     {
         switch (spinButtonMode)
         {
-            case SpinButtonMode.GenieWheelStart:
+            case SpinButtonMode.FeatureStart:
                 AudioManager.Instance?.PlayPrimaryActionButton();
-                ApplySpinButtonState(SpinButtonMode.GenieWheelStart, interactable: false);
-                gameManager.OnGenieWheelStartPressed();
+                ApplySpinButtonState(SpinButtonMode.FeatureStart, interactable: false);
+                gameManager.OnFeatureStartPressed();
                 return;
 
-            case SpinButtonMode.WinnerTake:
+            case SpinButtonMode.FeatureTake:
                 AudioManager.Instance?.PlayTakeButton();
-                ApplySpinButtonState(SpinButtonMode.WinnerTake, interactable: false);
-                gameManager.OnWinnerTakePressed();
+                ApplySpinButtonState(SpinButtonMode.FeatureTake, interactable: false);
+                gameManager.OnFeatureTakePressed();
                 return;
 
             case SpinButtonMode.BigWinTake:
@@ -710,10 +705,10 @@ public class UIManager : MonoBehaviour
     /// </summary>
     internal void SetSpinStopButtonStates(bool isSpinningState, bool isInteractable)
     {
-        // Explicit modes (big-win Take, the Genie Wheel's Start and Winner Take) are owned by whoever
-        // set them and outlive the spin events that would otherwise reset the button — the Winner
-        // panel in particular has to hold Take through its count-up. Only the interactable flag is
-        // honoured while one is active.
+        // Explicit modes (big-win Take, a feature's Start and Take) are owned by whoever set them and
+        // outlive the spin events that would otherwise reset the button — a total that counts up has
+        // to hold Take through its count-up. Only the interactable flag is honoured while one is
+        // active.
         if (IsExplicitMode(spinButtonMode))
         {
             SetButtonInteractable(spinButton, spinButtonPortrait, isInteractable);
@@ -1147,31 +1142,30 @@ public class UIManager : MonoBehaviour
 
     // Every state the one shared button can be in.
     //
-    // Modes that share art stay distinct because they answer to different owners: WinnerTake calls
-    // back into GameManager for the Genie Wheel's Winner panel, BigWinTake closes the popup. A new
-    // feature that takes the button over wants its own mode for the same reason. (Free Games has no
-    // Start of its own — the round starts itself.)
+    // Modes that share art stay distinct because they answer to different owners: FeatureTake calls
+    // back into GameManager for whichever feature showed it, BigWinTake closes the popup.
+    // FeatureStart / FeatureTake are the START and TAKE of a feature round (Wild Jokers' Free Spins:
+    // BonusFreeSpins.md); nothing uses them until that is built.
     internal enum SpinButtonMode
     {
         Spin,
         Stop,
         AutoplayStop,
         BigWinTake,
-        GenieWheelStart,
-        WinnerTake
+        FeatureStart,
+        FeatureTake
     }
 
     private SpinButtonMode spinButtonMode = SpinButtonMode.Spin;
 
     // True while a mode was set explicitly by SetSpinButtonMode rather than derived from the spin
-    // state. SetSpinStopButtonStates must not stomp on those — the Genie Wheel's Start and Winner
-    // panel and the big-win popup all hold the button in a mode across events that would otherwise
-    // reset it.
+    // state. SetSpinStopButtonStates must not stomp on those — a feature's Start and Take and the
+    // big-win popup all hold the button in a mode across events that would otherwise reset it.
     private static bool IsExplicitMode(SpinButtonMode mode)
     {
         return mode == SpinButtonMode.BigWinTake
-            || mode == SpinButtonMode.GenieWheelStart
-            || mode == SpinButtonMode.WinnerTake;
+            || mode == SpinButtonMode.FeatureStart
+            || mode == SpinButtonMode.FeatureTake;
     }
 
     internal void SetSpinButtonMode(SpinButtonMode mode, bool interactable = true)
@@ -1207,8 +1201,8 @@ public class UIManager : MonoBehaviour
         {
             case SpinButtonMode.Stop:           set = stopSprites; break;
             case SpinButtonMode.AutoplayStop:   set = autoplayStopSprites; break;
-            case SpinButtonMode.GenieWheelStart: set = startSprites; break;
-            case SpinButtonMode.WinnerTake:
+            case SpinButtonMode.FeatureStart:   set = startSprites; break;
+            case SpinButtonMode.FeatureTake:
             case SpinButtonMode.BigWinTake:     set = takeSprites; break;
             default:                            set = spinSprites; break;
         }
@@ -1224,8 +1218,8 @@ public class UIManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Locks down everything the player shouldn't touch during a feature — the Genie Wheel and the
-    /// Free Games round it leads to. Start/Take, fullscreen and the turbo/quickspin toggle stay live.
+    /// Locks down everything the player shouldn't touch during a feature round. Start/Take,
+    /// fullscreen and the turbo/quickspin toggle stay live.
     /// The darker look comes from Unity's built-in disabled tint already configured on these
     /// buttons, so no extra sprites are needed.
     /// </summary>
@@ -1346,15 +1340,9 @@ public class UIManager : MonoBehaviour
 
     internal void UpdateBalanceDisplay()
     {
-        // DisplayBalance, not playerData.balance: during a Genie Wheel trigger the wheel's prize is
-        // held back from the display until the feature pays it.
+        // DisplayBalance, not playerData.balance: it is where a feature holds the shown balance back
+        // (Wild Jokers' Free Spins freezes it for the whole round).
         SetTMPText(balanceText, balanceTextPortrait, "BALANCE : " + FormatAmount(gameManager.DisplayBalance));
-    }
-
-    /// <summary>Writes the win box directly — the Genie Wheel's prize, once the feature pays it.</summary>
-    internal void ShowWinAmount(double amount)
-    {
-        UpdateWinDisplay(amount);
     }
 
     private void UpdateWinDisplay(double amount)

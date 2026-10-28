@@ -84,12 +84,6 @@ public class ServerFeatures
     public ServerFreeSpinsFeature freeSpins;
     public ServerPickBonusFeature ballPickemBonus;
     public ServerPickBonusFeature sandbellPickBonus;
-
-    // Gold of Luck's features. Wild Jokers never sends them, so they arrive null; kept only until the
-    // Genie Wheel code that still reads them is removed.
-    public ServerGenieWheelFeature genieWheel;
-    public ServerGenieWildFeature genieWild;
-    public ServerFreeGamesFeature freeGames;
 }
 
 // Every feature names its symbol. The ids are nullable so a missing one reads as "not sent" rather
@@ -131,55 +125,6 @@ public class ServerPickBonusFeature
     // Sent and deliberately unbound: "nearMissReels", "nearMissCountRange" and "triggerProbability".
     // Server-side maths the client has no use for, and the near-miss range contradicts triggerCount
     // (2 to 4 when 3 already triggers) — raised with the backend.
-}
-
-// Gold of Luck — absent from Wild Jokers.
-[Serializable]
-public class ServerGenieWheelFeature
-{
-    // Confirmed against a live init. The converter logs an error if it ever comes back empty, so a
-    // renamed array fails loudly rather than leaving a wheel with no slices.
-    public List<ServerWheelSlice> segments;
-
-    // Sent and deliberately unbound: "enabled", "symbolId" (9, the Lamp — found through the symbol
-    // table's group instead), "minTrigger" (3) and "requiredReels" ([2,3,4], zero-based, so reels 3,
-    // 4 and 5). The anticipation doesn't need requiredReels: the backend only puts Lamps on those
-    // reels, so counting landed Lamps gives the same answer.
-}
-
-[Serializable]
-public class ServerWheelSlice
-{
-    public int sliceIndex;
-    public string type;       // "COIN", "MULTIPLIER" or "FREE_GAMES"
-    // Which are set depends on the type: a COIN slice has a coin, a FREE_GAMES slice has freeGames, and a
-    // MULTIPLIER slice has BOTH a coin and a multiplier (it pays coin × multiplier × total bet). double for
-    // coin in case a fractional value is ever sent; every captured coin so far has been a whole number.
-    public double coin;
-    public int multiplier;
-    public int freeGames;
-}
-
-// Gold of Luck — absent from Wild Jokers.
-[Serializable]
-public class ServerGenieWildFeature
-{
-    // The values a landed Genie can carry. The per-Genie value itself arrives with each spin, in
-    // payload.genieMultipliers — this list is only for describing the feature.
-    // "symbolId" and "maxMultiplierProduct" are sent too and deliberately unbound: the Genie is
-    // found through the symbol table's "group", and the product cap is the server's business.
-    public List<int> multipliers;
-}
-
-// Gold of Luck — absent from Wild Jokers.
-[Serializable]
-public class ServerFreeGamesFeature
-{
-    // Nothing is bound. "maxTotalFreeGames" (the cap on one round, retriggers included) is sent and
-    // deliberately unbound: the server enforces it, and the client only shows what each spin reports.
-    // "payMultiplier" is sent (1) but appliedMultiplier reads 1 on every captured win, free games
-    // included, and the win amounts arrive already multiplied. What a trigger awards comes from the
-    // wheel.
 }
 
 [Serializable]
@@ -261,10 +206,9 @@ public class ServerPayload
     //    feature is built. "matrix" is already the board after any respin.
     //  - "netReturnRatio" (grandTotalWin over total bet): the controller derives the same ratio.
 
-    // Gold of Luck's blocks. Wild Jokers never sends them, so they arrive null and read as "nothing
-    // happened"; kept only until the Genie Wheel code that still reads them is removed.
-    public Dictionary<string, int> genieMultipliers;
-    public ServerGenieWheelResult genieWheel;
+    // Gold of Luck's free-games block. Wild Jokers never sends it, so it arrives null and reads as
+    // "not in a round"; kept as the model for the free-spins state until Wild Jokers' own result is
+    // captured (BonusFreeSpins.md §9.4).
     public ServerFreeGamesResult freeGames;
 }
 
@@ -295,32 +239,7 @@ public class ServerCell
     public int col;
 }
 
-// Gold of Luck — absent from Wild Jokers.
-[Serializable]
-public class ServerGenieWheelResult
-{
-    public bool triggered;
-    // Absent unless triggered.
-    public ServerWheelResult result;
-}
-
-[Serializable]
-public class ServerWheelResult
-{
-    // Indexes the slice list sent at init. multiplierAwarded and freeGamesAwarded repeat that
-    // slice's own figures, so the client can cross-check what it is about to draw.
-    public int sliceIndex;
-    public string type;
-    public double coinAwarded;
-    public int multiplierAwarded;
-    public int freeGamesAwarded;
-    // The prize in cash, already inside grandTotalWin. A MULTIPLIER slice carries a coin as well and
-    // pays coin x multiplierAwarded x the TOTAL bet, even on a free spin. The client never computes
-    // this figure — it always shows what the server sends here.
-    public double winInCash;
-}
-
-// Gold of Luck — absent from Wild Jokers.
+// Gold of Luck — absent from Wild Jokers. Kept until Wild Jokers' free-spins result is captured.
 [Serializable]
 public class ServerFreeGamesResult
 {
@@ -382,10 +301,6 @@ public class GameConfig
     public List<double> availableBets;
     public List<SymbolInfo> symbols;
 
-    // Gold of Luck's Genie Wheel slices. Always empty for Wild Jokers; kept until the Genie Wheel code
-    // that reads it is removed.
-    public List<WheelSlice> wheelSlices;
-
     // Resolved from the init symbol table. -1 means "not present", so an unresolved role can never
     // collide with a real symbol id the way a 0 default would — and -1 stays meaningful downstream:
     // SocketIOManager keeps both off the pre-spin placeholder board, and reads -1 as "no such
@@ -422,26 +337,6 @@ public class SymbolInfo
     public int minMatch;
 }
 
-public enum WheelSliceType
-{
-    Coin,
-    Multiplier,
-    FreeGames
-}
-
-[Serializable]
-public class WheelSlice
-{
-    public int sliceIndex;
-    public WheelSliceType type;
-    // The coin value as the init sends it. A MULTIPLIER slice carries one too. What a landing pays
-    // in cash is always the server's figure (see ServerWheelResult).
-    public double coin;
-    // Applied to the slice's coin: coin x multiplier x the TOTAL bet.
-    public int multiplier;
-    public int freeGames;
-}
-
 #endregion
 
 #region Player & Game State (Client Side)
@@ -462,19 +357,17 @@ public class SpinResult
     // Everything the spin paid, from grandTotalWin. This is the figure to show and the one the
     // balance moved by.
     public double winAmount;
-    // The line wins alone. Gold of Luck's Genie Wheel withholds the gap to winAmount (its prize) and
-    // presents it separately; for Wild Jokers the two have been equal on every captured spin.
+    // The line wins alone. Equal to winAmount on every captured spin; a feature's prize would land in
+    // the gap.
     public double lineWinAmount;
 
     // One entry per winning payline.
     public List<WinLine> winLines;
     public PlayerData playerData;
 
-    // Gold of Luck's feature results. Wild Jokers never sends them, so these are always empty or
-    // untriggered; kept until the Genie Wheel code that reads them is removed.
+    // The free-spins state, from Gold of Luck's freeGames block. Wild Jokers never sends that block,
+    // so this always reads "not in a round" until its own result shape is bound.
     public FreeGameData freeGame;
-    public Dictionary<int, int> genieMultipliers;
-    public GenieWheelData genieWheel;
 }
 
 /// <summary>
@@ -509,33 +402,13 @@ public class FreeGameData
     // Spins left AFTER this one. Retriggers are folded in, so it can go up as well as down.
     public int spinsRemaining;
 
-    // Set on any spin whose wheel landed on a free-games slice. The controller only reads it inside a
-    // round, where it marks a retrigger; the initial award is handled by the Genie Wheel itself.
+    // Spins were awarded on this spin. The controller only reads it inside a round, where it marks a
+    // retrigger. Gold of Luck set it from its wheel, which is gone, so nothing sets it until Wild
+    // Jokers' trigger flag is bound (BonusFreeSpins.md §9.4).
     public bool spinsAwarded;
 
     // The round's running total, server-authoritative. Excludes the trigger spin's own win.
     public double roundWin;
-}
-
-/// <summary>
-/// What the Genie Wheel did on one spin. The landing slice is a server fact: the view animates to
-/// it and shows what it is given, never picking a slice or deriving a prize from an angle.
-/// </summary>
-[Serializable]
-public class GenieWheelData
-{
-    // True on the spin whose Lamps triggered the wheel — in the base game or on a free spin.
-    public bool triggered;
-
-    // Indexes GameConfig.wheelSlices.
-    public int sliceIndex;
-    public WheelSliceType type;
-    // Spins awarded — set on a FREE_GAMES landing only.
-    public int freeGames;
-    // The cash prize, already inside SpinResult.winAmount. Always the server's figure — show this,
-    // never a value derived from the slice's coin or multiplier. (The result's coinAwarded and
-    // multiplierAwarded are read only to work out the type when the type word is unrecognised.)
-    public double winAmount;
 }
 
 #endregion
@@ -594,8 +467,7 @@ public static class InitDataConverter
             activeLine = ResolveBetMultiplier(gameData),
             paylines = ConvertPaylines(gameData?.lines, reelCount, 3),
             availableBets = gameData?.bets,
-            symbols = new List<SymbolInfo>(),
-            wheelSlices = ConvertWheelSlices(features?.genieWheel)
+            symbols = new List<SymbolInfo>()
         };
 
         if (config.availableBets == null || config.availableBets.Count == 0)
@@ -744,55 +616,6 @@ public static class InitDataConverter
         return symbolId.Value;
     }
 
-    // Sorted by sliceIndex so a slice's place in the list is its index, whatever order the server
-    // sent them in. Gold of Luck only: Wild Jokers has no wheel, so an empty list is the normal case.
-    private static List<WheelSlice> ConvertWheelSlices(ServerGenieWheelFeature wheel)
-    {
-        var slices = new List<WheelSlice>();
-
-        if (wheel?.segments == null || wheel.segments.Count == 0) return slices;
-
-        foreach (var serverSlice in wheel.segments)
-        {
-            if (serverSlice == null) continue;
-
-            slices.Add(new WheelSlice
-            {
-                sliceIndex = serverSlice.sliceIndex,
-                type = ParseSliceType(serverSlice.type, serverSlice.coin, serverSlice.multiplier, serverSlice.freeGames, "wheel slice " + serverSlice.sliceIndex),
-                coin = serverSlice.coin,
-                multiplier = serverSlice.multiplier,
-                freeGames = serverSlice.freeGames
-            });
-        }
-
-        slices.Sort((a, b) => a.sliceIndex.CompareTo(b.sliceIndex));
-        return slices;
-    }
-
-    // An unknown type is read from its figures, and logged — the backend has added a slice kind this
-    // client doesn't know. The amount paid is unaffected either way, since the client always shows the
-    // server's winInCash; only how the wheel describes the slice would be wrong.
-    //
-    // The multiplier is checked BEFORE the coin: a MULTIPLIER slice carries a coin value too, so a coin
-    // check first would misread it as a COIN slice and lose its badge.
-    private static WheelSliceType ParseSliceType(string type, double coin, int multiplier, int freeGames, string source)
-    {
-        switch ((type ?? string.Empty).Trim().ToUpperInvariant())
-        {
-            case "COIN":       return WheelSliceType.Coin;
-            case "MULTIPLIER": return WheelSliceType.Multiplier;
-            case "FREE_GAMES": return WheelSliceType.FreeGames;
-        }
-
-        WheelSliceType guess = freeGames > 0  ? WheelSliceType.FreeGames
-                             : multiplier > 0 ? WheelSliceType.Multiplier
-                             : coin > 0       ? WheelSliceType.Coin
-                             : WheelSliceType.Multiplier;
-        UnityEngine.Debug.LogError($"[InitDataConverter] {source} has unrecognised type '{type}' — read as {guess} from its figures.");
-        return guess;
-    }
-
     internal static PlayerData ConvertToPlayerData(ServerPlayer serverPlayer, int defaultBetIndex = 0)
     {
         return new PlayerData
@@ -830,105 +653,29 @@ public static class InitDataConverter
                 currentBetIndex = 0
             },
 
-            freeGame = ConvertFreeGame(payload?.freeGames, payload?.genieWheel),
-            genieMultipliers = ConvertGenieMultipliers(payload?.genieMultipliers, gameConfig),
-            genieWheel = ConvertGenieWheel(payload?.genieWheel)
+            freeGame = ConvertFreeGame(payload?.freeGames)
         };
     }
 
     // Never returns null, so the controller can read it without guarding every access. A missing
     // block is indistinguishable from "not in a round", which is the correct reading either way.
     //
-    // Maps the wire's post-spin fields onto the per-spin meanings the controller was built on:
-    //  - spinsAwarded is "the wheel landed on a free-games slice". The wire's freeGames.triggered
-    //    stays true for the whole round, so it cannot say which spin did the awarding.
-    private static FreeGameData ConvertFreeGame(ServerFreeGamesResult serverFreeGames, ServerGenieWheelResult wheel)
+    // spinsAwarded is left false: Gold of Luck derived it from its wheel, and the wire's
+    // freeGames.triggered stays true for the whole round, so it cannot say which spin did the
+    // awarding. Wild Jokers' own trigger flag goes here once it is captured.
+    private static FreeGameData ConvertFreeGame(ServerFreeGamesResult serverFreeGames)
     {
         if (serverFreeGames == null) return new FreeGameData();
-
-        bool wheelAwardedGames = wheel != null && wheel.triggered
-            && wheel.result != null && wheel.result.freeGamesAwarded > 0;
 
         return new FreeGameData
         {
             spinsRemaining = serverFreeGames.remaining,
-            spinsAwarded = wheelAwardedGames,
             roundWin = serverFreeGames.totalFreeGamesWin
         };
     }
 
-    // A wheel that reports itself triggered with no result is treated as not triggered: there is
-    // nothing to animate to, and pretending otherwise would stall the round waiting for a landing.
-    private static GenieWheelData ConvertGenieWheel(ServerGenieWheelResult serverWheel)
-    {
-        var data = new GenieWheelData();
-
-        if (serverWheel == null || !serverWheel.triggered) return data;
-
-        if (serverWheel.result == null)
-        {
-            UnityEngine.Debug.LogError("[InitDataConverter] genieWheel reported triggered but carried no result — wheel skipped.");
-            return data;
-        }
-
-        var result = serverWheel.result;
-        data.triggered = true;
-        data.sliceIndex = result.sliceIndex;
-        data.type = ParseSliceType(result.type, result.coinAwarded, result.multiplierAwarded, result.freeGamesAwarded, "genieWheel result");
-        data.freeGames = result.freeGamesAwarded;
-        data.winAmount = result.winInCash;
-        return data;
-    }
-
-    // Turns payload.genieMultipliers into flat cell index -> multiplier. One bad key is skipped
-    // rather than costing the whole spin.
-    private static Dictionary<int, int> ConvertGenieMultipliers(Dictionary<string, int> genieMultipliers, GameConfig gameConfig)
-    {
-        var result = new Dictionary<int, int>();
-        if (genieMultipliers == null) return result;
-
-        foreach (var entry in genieMultipliers)
-        {
-            if (TryParseCellKey(entry.Key, gameConfig, "genieMultipliers", out int flatIndex))
-            {
-                result[flatIndex] = entry.Value;
-            }
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Reads a "row,col" cell key into a flat index (row * reelCount + col). Confirmed against live
-    /// data: a key of "0,3" lands on a Genie in the matrix only when read as row 0, column 3.
-    ///
-    /// Returns false and logs for anything malformed or out of range, so one bad cell is skipped
-    /// rather than costing the whole spin.
-    /// </summary>
-    private static bool TryParseCellKey(string key, GameConfig gameConfig, string source, out int flatIndex)
-    {
-        flatIndex = -1;
-        if (string.IsNullOrEmpty(key)) return false;
-
-        int separator = key.IndexOf(',');
-        if (separator <= 0 || separator >= key.Length - 1)
-        {
-            UnityEngine.Debug.LogError($"[InitDataConverter] {source} key '{key}' is not in the expected row,col form — cell skipped.");
-            return false;
-        }
-
-        if (!int.TryParse(key.Substring(0, separator), out int row)
-            || !int.TryParse(key.Substring(separator + 1), out int col))
-        {
-            UnityEngine.Debug.LogError($"[InitDataConverter] Could not read row/col out of {source} key '{key}' — cell skipped.");
-            return false;
-        }
-
-        return TryGetFlatIndex(row, col, gameConfig, $"{source} key '{key}'", out flatIndex);
-    }
-
     // The one place a row and column become a flat index, so the bounds check cannot drift between
-    // the callers that read keys and the ones that read {row, col} objects.
+    // callers.
     private static bool TryGetFlatIndex(int row, int col, GameConfig gameConfig, string source, out int flatIndex)
     {
         flatIndex = -1;
