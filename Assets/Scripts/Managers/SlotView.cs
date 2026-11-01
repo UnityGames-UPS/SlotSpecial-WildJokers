@@ -173,6 +173,14 @@ public class SlotView : MonoBehaviour
     [SerializeField] private GameObject winAnimationLayer;
     [Tooltip("One entry per reel column, each holding the 3 active-row slots top to bottom.")]
     [SerializeField] private List<AnimSlotColumn> animSlotColumns = new List<AnimSlotColumn>(3);
+    [Tooltip("The animated box drawn over each winning cell (AnimationLayer/WinBoxes) — one entry per reel column, each holding its 3 boxes top to bottom.")]
+    [SerializeField] private List<WinBoxColumn> winBoxColumns = new List<WinBoxColumn>(5);
+    [Tooltip("The win box's frames. One clip for every box, handed to all of them at runtime — the boxes' own frame lists stay empty.")]
+    [SerializeField] private List<Sprite> winBoxFrames = new List<Sprite>();
+
+    // The win box clip's speed. ImageAnimation holds each frame for frames ÷ (24 × speed) seconds,
+    // so a speed equal to the frame count plays at 24 fps: 33 frames, about 1.4 s a loop.
+    private const float winBoxAnimationSpeed = 33f;
     [Tooltip("The per-line win amount, ONE PER ROW, top to bottom — element 0 is the top row. This game draws no payline graphics: a win is shown by animating its symbols and putting its payout on the middle reel, so only three positions are ever needed.")]
     [SerializeField] private TMPro.TMP_Text[] winLineAmounts = new TMPro.TMP_Text[3];
 
@@ -242,6 +250,18 @@ public class SlotView : MonoBehaviour
     private int WildSymbolId => (gameManager != null && gameManager.gameConfig != null)
         ? gameManager.gameConfig.wildSymbolId
         : -1;
+
+    // Every symbol the init's symbol table puts in the scatter group — the Drum, the Ball and the
+    // Sandbell. Read from the table rather than the per-feature ids, which stay -1 until the backend
+    // names them.
+    private bool IsScatterSymbol(int symbolId)
+    {
+        var symbols = gameManager?.gameConfig?.symbols;
+        if (symbols == null) return false;
+
+        SymbolInfo symbol = symbols.Find(s => s.id == symbolId);
+        return symbol != null && symbol.isScatter;
+    }
 
     #region Initialization
 
@@ -1271,9 +1291,9 @@ public class SlotView : MonoBehaviour
     /// long as the player sat looking at the result.
     /// </param>
     /// <param name="rounds">
-    /// How many times every symbol here plays, IN STEP: they all start together, and the group waits
-    /// for the slowest before going again. Left to their own loop counts they drift apart at once,
-    /// since a symbol's loop length is its frame count over its speed and no two match.
+    /// How many times every box and symbol clip here plays, IN STEP: they all start together, and the
+    /// group waits for the slowest before going again. Left to their own loop counts they drift apart
+    /// at once, since a clip's loop length is its frame count over its speed and no two match.
     /// Zero or less means the closing hold — start them looping and do not wait at all.
     /// </param>
     private IEnumerator AnimateWinPositions(IEnumerable<int> flatPositions, int rounds = 1, bool announceWilds = false)
@@ -1310,12 +1330,9 @@ public class SlotView : MonoBehaviour
             int symbolId = currentDisplayMatrix[col][matrixRow];
 
             // A guard: a scatter never takes part in a line win, so if the server ever lists one
-            // among a win's positions it is left dimmed. Scatters get their own presentation when
-            // they trigger a feature. (Still checks only scatterSymbolId — ToDo.md.)
-            int winBonusId = (gameManager != null && gameManager.gameConfig != null)
-                ? gameManager.gameConfig.scatterSymbolId
-                : -1;
-            if (symbolId == winBonusId) continue;
+            // among a win's positions it is left dimmed, with no box. Scatters get their own
+            // presentation when they trigger a feature.
+            if (IsScatterSymbol(symbolId)) continue;
 
             // Once per spin, however many Wilds are winning.
             if (announceWilds && !wildAnnounced && symbolId == WildSymbolId)
@@ -1343,6 +1360,19 @@ public class SlotView : MonoBehaviour
             // than blanket-hiding the display block, so the scatter (skipped above) correctly stays
             // on screen and dimmed. HideWinSlots puts every icon back.
             SetDisplayIconActive(col, row, false);
+
+            // The box over this cell. Every winning cell gets one, whether or not its symbol
+            // animates, and the rounds below wait on it like any symbol clip.
+            ImageAnimation box = GetWinBox(col, row);
+            if (box != null && winBoxFrames != null && winBoxFrames.Count > 0)
+            {
+                box.textureArray = winBoxFrames;
+                box.doLoopAnimation = true;
+                // Set before StartAnimation, for the same reason as the symbol's speed below.
+                box.AnimationSpeed = winBoxAnimationSpeed;
+                box.gameObject.SetActive(true);
+                activeAnims.Add(box);
+            }
 
             // Animate on top of that only if this symbol actually has frames.
             if (symbolId < 0 || symbolId >= animationSpriteArrays.Length) continue;
@@ -1562,6 +1592,18 @@ public class SlotView : MonoBehaviour
         if (icon != null) icon.gameObject.SetActive(active);
     }
 
+    // The win box over one visible cell, or null when that box isn't wired. Same row order as
+    // displayImages and the animation layer.
+    private ImageAnimation GetWinBox(int col, int row)
+    {
+        if (winBoxColumns == null || col < 0 || col >= winBoxColumns.Count) return null;
+
+        var column = winBoxColumns[col];
+        if (column == null || column.rows == null || row < 0 || row >= column.rows.Count) return null;
+
+        return column.rows[row];
+    }
+
     // Takes the whole win layer down and restores every reel icon underneath it. The restore is
     // deliberately unconditional and paired with the hide in this one method: AnimateWinPositions
     // hides icons per winning cell, and if any of them were missed here that cell would stay blank
@@ -1579,6 +1621,24 @@ public class SlotView : MonoBehaviour
                     if (slot == null || slot.image == null) continue;
 
                     slot.image.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        // Stopped as well as hidden: ImageAnimation drives itself with Invoke, so deactivating its
+        // object is not a reliable way to end it.
+        if (winBoxColumns != null)
+        {
+            foreach (var column in winBoxColumns)
+            {
+                if (column == null || column.rows == null) continue;
+                foreach (var box in column.rows)
+                {
+                    if (box == null) continue;
+
+                    box.onLoopComplete = null;
+                    box.StopAnimation();
+                    box.gameObject.SetActive(false);
                 }
             }
         }
@@ -1724,6 +1784,14 @@ public class AnimSlot
 public class AnimSlotColumn
 {
     public List<AnimSlot> rows = new List<AnimSlot>(3);   // index 0 = top active row
+}
+
+// One reel column's win boxes: the animated frame drawn over each winning cell, on the animation
+// layer above the winning symbols. Only the ImageAnimation is wired — it finds its own Image.
+[System.Serializable]
+public class WinBoxColumn
+{
+    public List<ImageAnimation> rows = new List<ImageAnimation>(3);   // index 0 = top active row
 }
 
 [System.Serializable]
