@@ -526,12 +526,11 @@ public class UIManager : MonoBehaviour
     {
         AudioManager.Instance?.PlaySpinStart();
 
-        // Free spins show the plain Spin button, greyed out, so this only decides the interactable
-        // flag. It must stay false for the whole round, or a spin inside it would re-enable a button
-        // the round has deliberately taken over.
+        // Free spins show STOP while each spin runs, and it quick-stops that spin like the base game's
+        // (owner). The bet and settings stay locked by the feature (SetFeatureButtonLock).
         if (gameManager.isInFreeSpins)
         {
-            SetSpinStopButtonStates(isSpinningState: true, isInteractable: false);
+            SetSpinStopButtonStates(isSpinningState: true, isInteractable: true);
         }
         else
         {
@@ -542,8 +541,8 @@ public class UIManager : MonoBehaviour
 
         UpdateBalanceDisplay();
 
-        // In free games the win box shows the round's running total, so it is not cleared per spin —
-        // only by StartFreeSpins and by SetSpinButtonMode(Spin) once the win has been taken.
+        // In free spins the win box shows the round's running total, so it is not cleared per spin —
+        // RefreshFeatureDisplays sets it as the round starts, and the next base spin clears it.
         if (gameManager == null || !gameManager.isInFreeSpins)
         {
             UpdateWinDisplay(0);
@@ -601,6 +600,14 @@ public class UIManager : MonoBehaviour
             SetBetControlsEnabled(true);
             SetButtonInteractable(settingsOpenButton, settingsOpenButtonPortrait, true);
         }
+    }
+
+    // A feature round has just started: the win box shows its running total (0 so far) and the
+    // balance its held figure.
+    internal void RefreshFeatureDisplays()
+    {
+        UpdateWinDisplay(gameManager != null && gameManager.isInFreeSpins ? gameManager.freeSpinsRoundWin : 0);
+        UpdateBalanceDisplay();
     }
 
     internal void TriggerBigWinPopup(SpinResult result, System.Action onComplete = null)
@@ -715,11 +722,10 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        // Free spins show the ordinary Spin button, greyed out, for the whole round — never Stop, which
-        // would imply the player can interrupt a spin they did not start.
+        // Free spins follow the same rule as the base game: Stop while a spin runs (pressable, it
+        // quick-stops), greyed between spins, where the callers pass isSpinningState true.
         SpinButtonMode mode;
         if (gameManager != null && gameManager.isAutoPlaying)  mode = SpinButtonMode.AutoplayStop;
-        else if (gameManager != null && gameManager.isInFreeSpins) mode = SpinButtonMode.Spin;
         else if (isSpinningState)                             mode = SpinButtonMode.Stop;
         else                                                  mode = SpinButtonMode.Spin;
 
@@ -1144,8 +1150,8 @@ public class UIManager : MonoBehaviour
     //
     // Modes that share art stay distinct because they answer to different owners: FeatureTake calls
     // back into GameManager for whichever feature showed it, BigWinTake closes the popup.
-    // FeatureStart / FeatureTake are the START and TAKE of a feature round (Wild Jokers' Free Spins:
-    // BonusFreeSpins.md); nothing uses them until that is built.
+    // FeatureStart / FeatureTake are the START and TAKE of a feature round — Free Spins' START before
+    // the first free spin and TAKE after TOTAL WIN (BonusFreeSpins.md §5, §7).
     internal enum SpinButtonMode
     {
         Spin,

@@ -1,299 +1,169 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using DG.Tweening;
 
 /// <summary>
-/// Presentation for the Free Games round: the congratulations panel that announces the award, and
-/// the "FREE GAME X/Y" counter above the slot. Gold of Luck's — that round was entered from its
-/// Genie Wheel, which is gone. Wild Jokers' Free Spins (Assets/Scripts/MD/BonusFreeSpins.md) has a
-/// different sequence and will rewrite or replace this.
+/// Free Spins' screen furniture (BonusFreeSpins.md §5, §7, §8): the fade to black on the way in,
+/// the "FREE GAME X OF Y" panel that takes the logo's place for the round, and the panel / logo
+/// crossfade on the way out. The popups themselves are FeaturePopupView's.
 ///
-/// View layer only. GameManager drives this via the methods below and receives callbacks when a
-/// sequence finishes — this script never calls back into the game loop. Attach to a GameObject that
-/// stays active for the whole session, NOT to either panel: deactivating those would halt these
-/// coroutines mid-sequence.
+/// View layer only. GameManager drives this and is called back when a fade has finished; this never
+/// calls into the game loop. DOTween-driven, so nothing depends on which objects are switched on.
+/// Every reference is optional — a missing one skips its part and still calls back.
 /// </summary>
 public class FreeGameView : MonoBehaviour
 {
-    [Header("Counter")]
-    [Tooltip("The panel above the slot for the whole round: a \"FREE GAME\" label, the two numbers, and a " +
-             "static \"/\" between them. The label and the \"/\" are part of the panel — only the numbers are written.")]
+    [Header("Free Game panel")]
+    [Tooltip("The \"FREE GAME X OF Y\" panel above the reels (FreeGamesRemainingText). Its CanvasGroup is used for the fade out at TAKE. The \"FREE GAME\" and \"OF\" images are part of it — only the two numbers are written.")]
     [SerializeField] private GameObject counterPanel;
 
-    [Tooltip("Spins left, counting down: 10, 9 … 0. Sprite digits.")]
-    [SerializeField] private TMPro.TMP_Text remainingSpinsText;
+    [Tooltip("X — the spins played so far, this one included (RemainingFreeSpins in the scene). Sprite digits.")]
+    [SerializeField] private TMPro.TMP_Text playedSpinsText;
 
-    [Tooltip("The round's total spins. Goes up on a retrigger. Sprite digits.")]
+    [Tooltip("Y — the spins awarded in the round, retriggers included. Sprite digits.")]
     [SerializeField] private TMPro.TMP_Text totalSpinsText;
 
-    [Header("Congratulations Panel")]
-    [Tooltip("\"CONGRATULATIONS / x / FREE GAMES AWARDED\". Scales up from nothing, plays its clip, shows its titles, " +
-             "holds, and closes by itself.")]
-    [SerializeField] private GameObject congratulationsPanel;
+    [Header("Logo and black film")]
+    [Tooltip("The logo above the reels (Logo). Switched off while the screen is black on the way in, faded back in at TAKE.")]
+    [SerializeField] private CanvasGroup logoGroup;
 
-    [Tooltip("The awarded spin count — the x in the panel (FreeGameAmount). Visible from the start, scaling up with " +
-             "the panel. Written in sprite digits through SpriteTextFormatter, so it needs the digit sprite asset.")]
-    [SerializeField] private TMPro.TMP_Text awardedSpinsText;
+    [Tooltip("The full-screen black film (BlackFlim), faded up and down on the way into the round.")]
+    [SerializeField] private CanvasGroup blackFilm;
 
-    [Tooltip("The panel's open-then-loop clip. Set it up as TWO_PHASE in the Inspector — the code " +
-             "only starts and stops it, and reads which frame it is showing to cue the titles.")]
-    [SerializeField] private ImageAnimation congratulationsPanelAnim;
+    // Tuning — placeholders until the owner signs off the timings (BonusFreeSpins.md §11).
+    private const float BlackFadeDuration = 0.5f;            // each way: to black, and back
+    private const float BlackHold = 0.2f;                    // fully black, while the panel swaps in
+    private const float PanelLogoCrossfadeDuration = 0.6f;   // panel out / logo in, together, at TAKE
 
-    // A documented exception to "tuning lives in code": judged by eye, so serialized, and the
-    // scene's values are the ones that run.
-    [Tooltip("Seconds the panel takes to scale up from 0 to its scene scale, with a slight overshoot. Its clip starts Clip Early Start Frames before the scale-up ends.")]
-    [SerializeField] private float panelScaleUpDuration = 0.35f;
+    private Sequence activeSequence;
 
-    [Tooltip("How many clip frames before the scale-up finishes the panel's clip is started. ImageAnimation holds a " +
-             "two-phase clip's first frame for about two frames before it moves, so starting it this early has frame 1 " +
-             "land as the panel reaches full size. 0 = start it once the scale-up has finished.")]
-    [SerializeField] private int clipEarlyStartFrames = 2;
+    #region Called by GameManager
 
-    [Tooltip("Seconds the panel stays up, titles pulsing, once both titles have scaled up. Then it closes by itself.")]
-    [SerializeField] private float titlesPulseHold = 2f;
-
-    [Header("Congratulations Titles")]
-    [Tooltip("The \"Congratulations\" text image. Scales up from 0 where it stands, Title Lead Frames before the " +
-             "clip's opening phase ends, then pulses while the panel is up.")]
-    [SerializeField] private RectTransform congratulationsTitle;
-
-    [Tooltip("The \"Free Games Awarded\" text image. Scales up Title Stagger after Congratulations, then pulses.")]
-    [SerializeField] private RectTransform freeGamesAwardedTitle;
-
-    [Tooltip("How many clip frames before the end of the opening phase the titles start to scale up. Counted on the " +
-             "frame actually on screen, so it holds whatever the clip's speed.")]
-    [SerializeField] private int titleLeadFrames = 9;
-
-    [Tooltip("Seconds Free Games Awarded starts after Congratulations.")]
-    [SerializeField] private float titleStagger = 0.1f;
-
-    [Tooltip("Seconds each title takes to scale up from 0 to full size, with a slight overshoot.")]
-    [SerializeField] private float titlePopDuration = 0.35f;
-
-    [Tooltip("The scale each title pulses up to after scaling up, and back down to 1, for as long as the panel is up.")]
-    [SerializeField] private float titlePulseScale = 1.06f;
-
-    [Tooltip("Seconds for one half of the pulse (1 up to Title Pulse Scale, or back down).")]
-    [SerializeField] private float titlePulseDuration = 0.6f;
-
-    [Header("Congratulations Closing")]
-    [Tooltip("Seconds the panel takes to scale down to nothing, and the two titles to slide to the panel's middle " +
-             "(y 0). All of it starts with the reverse of the clip's opening; the reverse holds its last frame until " +
-             "the scale-down has finished, and then the panel goes.")]
-    [SerializeField] private float panelScaleDownDuration = 0.8f;
-
-    // Grace added to the clip's computed opening length before the title cue is given up on — the
-    // clip's frames run a little long, and a clip that never plays must not hold the titles back.
-    private const float TitleCueTimeoutMargin = 1f;
-
-    private Coroutine activeSequence;
-    private readonly List<Tween> titleTweens = new List<Tween>();
-
-    // The panel's scale-up / reverse-and-scale-down choreography, shared with the Winner panel. Made
-    // in Awake, which is when it reads the panel's scene scale and the clip's own setup.
-    private PanelClipPlayback congratulationsClip;
-
-    // The titles' scene positions, read once at startup — the close slides them to y 0.
-    private Vector2 congratulationsTitleHome;
-    private Vector2 freeGamesAwardedTitleHome;
-
-    private void Awake()
+    /// <summary>The base game's look: logo on, panel and black film off. Called at init.</summary>
+    internal void ResetToBaseGame()
     {
-        congratulationsClip = new PanelClipPlayback(
-            congratulationsPanel != null ? congratulationsPanel.transform : null, congratulationsPanelAnim);
+        KillSequence();
 
-        if (congratulationsTitle != null) congratulationsTitleHome = congratulationsTitle.anchoredPosition;
-        if (freeGamesAwardedTitle != null) freeGamesAwardedTitleHome = freeGamesAwardedTitle.anchoredPosition;
+        SetGroup(logoGroup, true, 1f);
+        SetPanel(false, 1f);
+        SetGroup(blackFilm, false, 0f);
     }
 
-    #region Public API — called by GameManager
-
     /// <summary>
-    /// Free games were awarded: the congratulations panel scales up with the awarded count,
-    /// plays its opening, shows its titles, holds for titlesPulseHold, and closes by itself.
-    /// onClosed fires once it has gone.
+    /// Into the round: the screen fades to black; while black, the logo goes and the panel comes with
+    /// the counter written; the screen fades back in. onDone fires once it is clear again.
     /// </summary>
-    internal void ShowCongratulations(int spins, Action onClosed)
+    internal void EnterRound(int played, int total, Action onDone)
     {
-        StopActiveSequence();
+        KillSequence();
+        WriteCounter(played, total);
 
-        if (congratulationsPanel == null)
+        void SwapToPanel()
         {
-            onClosed?.Invoke();
+            SetGroup(logoGroup, false, 1f);
+            SetPanel(true, 1f);
+        }
+
+        if (blackFilm == null)
+        {
+            SwapToPanel();
+            onDone?.Invoke();
             return;
         }
 
-        activeSequence = StartCoroutine(CongratulationsRoutine(spins, onClosed));
-    }
+        SetGroup(blackFilm, true, 0f);
 
-    /// <summary>The round is entered: the counter panel shows.</summary>
-    internal void ShowCounter(int remaining, int total)
-    {
-        if (counterPanel != null) counterPanel.SetActive(true);
-        WriteCounter(remaining, total);
+        activeSequence = DOTween.Sequence()
+            .Append(blackFilm.DOFade(1f, BlackFadeDuration).SetEase(Ease.Linear))
+            .AppendCallback(SwapToPanel)
+            .AppendInterval(BlackHold)
+            .Append(blackFilm.DOFade(0f, BlackFadeDuration).SetEase(Ease.Linear))
+            .OnComplete(() =>
+            {
+                activeSequence = null;
+                SetGroup(blackFilm, false, 0f);
+                onDone?.Invoke();
+            });
     }
 
     /// <summary>
-    /// Sets the counter. Called as each free spin's result arrives, and after a retrigger — where
-    /// the server has already added the extra spins, so the total simply goes up.
+    /// X and Y. Counts, not money — ToSpriteDigits, so 10 stays "10" and not "10.00".
     /// </summary>
-    internal void UpdateCounter(int remaining, int total)
+    internal void UpdateCounter(int played, int total)
     {
-        WriteCounter(remaining, total);
+        WriteCounter(played, total);
     }
 
-    /// <summary>The round is over — the counter goes. Called under the closing dim.</summary>
-    internal void HideCounter()
+    /// <summary>
+    /// Out of the round, at TAKE: the panel fades out while the logo fades in, together. onDone fires
+    /// once both have finished.
+    /// </summary>
+    internal void ExitRound(Action onDone)
     {
-        if (counterPanel != null) counterPanel.SetActive(false);
-    }
+        KillSequence();
 
-    #endregion
+        CanvasGroup panelGroup = counterPanel != null ? counterPanel.GetComponent<CanvasGroup>() : null;
 
-    #region Sequences
+        SetGroup(logoGroup, true, 0f);
 
-    // 1. The panel scales up from nothing with the spin count already on it; the titles wait at 0.
-    // 2. The clip plays its opening, started clipEarlyStartFrames before the scale-up ends so its
-    //    first movement lands as the panel reaches full size.
-    // 3. titleLeadFrames before the opening ends, Congratulations scales up, Free Games Awarded a
-    //    moment later; each pulses once it is full size.
-    // 4. Once both are up, the panel holds for titlesPulseHold.
-    // 5. The close: the clip's opening plays backwards while the panel scales down and the titles
-    //    slide to y 0; once the scale-down has finished, the panel goes.
-    private IEnumerator CongratulationsRoutine(int spins, Action onClosed)
-    {
-        StopCongratulationsAnimations();
+        activeSequence = DOTween.Sequence();
+        if (logoGroup != null) activeSequence.Join(logoGroup.DOFade(1f, PanelLogoCrossfadeDuration).SetEase(Ease.Linear));
+        if (panelGroup != null) activeSequence.Join(panelGroup.DOFade(0f, PanelLogoCrossfadeDuration).SetEase(Ease.Linear));
+        // Keeps the length even when neither group is wired, so the step still reads as a beat.
+        activeSequence.AppendInterval(0f);
 
-        AudioManager.Instance?.PlayCongratulations();
-        if (awardedSpinsText != null) awardedSpinsText.text = SpriteTextFormatter.ToSpriteDigits(spins.ToString());
-
-        SetTitleScale(congratulationsTitle, 0f);
-        SetTitleScale(freeGamesAwardedTitle, 0f);
-
-        // Activated first, in the same frame the scale-up sets it to 0, so it never shows at full size.
-        congratulationsPanel.SetActive(true);
-        yield return congratulationsClip.ScaleUpAndPlay(panelScaleUpDuration, clipEarlyStartFrames);
-
-        yield return congratulationsClip.WaitForOpeningCue(titleLeadFrames, TitleCueTimeoutMargin, nameof(FreeGameView));
-
-        PopThenPulse(congratulationsTitle, 0f);
-        PopThenPulse(freeGamesAwardedTitle, Mathf.Max(0f, titleStagger));
-
-        float titlesUp = Mathf.Max(0f, titleStagger) + Mathf.Max(0.01f, titlePopDuration);
-        yield return new WaitForSeconds(titlesUp + Mathf.Max(0f, titlesPulseHold));
-
-        // The titles stop pulsing where they are; the scale-down carries them from there.
-        AudioManager.Instance?.PlayCongratsClose();
-        KillTitleTweens();
-
-        // The reverse and the panel's scale-down start together (see PanelClipPlayback).
-        Tween scaleDown = congratulationsClip.ReverseAndScaleDown(panelScaleDownDuration);
-        if (scaleDown != null)
+        activeSequence.OnComplete(() =>
         {
-            SlideTitleToMiddle(congratulationsTitle);
-            SlideTitleToMiddle(freeGamesAwardedTitle);
-
-            // The panel's three children shrink too, on top of the parent — so they go faster than
-            // the panel and are gone a little ahead of it.
-            ScaleDownWithPanel(congratulationsTitle);
-            ScaleDownWithPanel(freeGamesAwardedTitle);
-            ScaleDownWithPanel(awardedSpinsText != null ? awardedSpinsText.rectTransform : null);
-
-            yield return scaleDown.WaitForCompletion();
-        }
-
-        // StopCongratulationsAnimations puts the clip's own frames back and every scale and position
-        // back to the scene's.
-        congratulationsClip.StopClip();
-        StopCongratulationsAnimations();
-        congratulationsPanel.SetActive(false);
-
-        activeSequence = null;
-        onClosed?.Invoke();
-    }
-
-    private void SlideTitleToMiddle(RectTransform title)
-    {
-        if (title == null) return;
-
-        titleTweens.Add(title.DOAnchorPosY(0f, panelScaleDownDuration).SetEase(Ease.InOutSine));
-    }
-
-    private void ScaleDownWithPanel(RectTransform child)
-    {
-        if (child == null) return;
-
-        titleTweens.Add(child.DOScale(0f, panelScaleDownDuration).SetEase(Ease.Linear));
-    }
-
-    // Scales up from 0 in place with a slight overshoot, then pulses. The pulse is a separate tween
-    // started when the scale-up completes — an infinitely looping tween cannot sit inside a Sequence.
-    private void PopThenPulse(RectTransform title, float delay)
-    {
-        if (title == null) return;
-
-        title.localScale = Vector3.zero;
-
-        Tween pop = title.DOScale(1f, Mathf.Max(0.01f, titlePopDuration))
-            .SetEase(Ease.OutBack)
-            .SetDelay(delay);
-        pop.OnComplete(() =>
-        {
-            Tween pulse = title.DOScale(titlePulseScale, Mathf.Max(0.01f, titlePulseDuration))
-                .SetEase(Ease.InOutSine)
-                .SetLoops(-1, LoopType.Yoyo);
-            titleTweens.Add(pulse);
+            activeSequence = null;
+            SetPanel(false, 1f);
+            SetGroup(logoGroup, true, 1f);
+            onDone?.Invoke();
         });
-        titleTweens.Add(pop);
-    }
-
-    // Everything back as the scene has it — scales, the titles' positions, the clip's own frames — so
-    // the panel never reopens mid-scale, mid-pulse or mid-close.
-    private void StopCongratulationsAnimations()
-    {
-        congratulationsClip.Reset();
-        KillTitleTweens();
-
-        SetTitleScale(congratulationsTitle, 1f);
-        SetTitleScale(freeGamesAwardedTitle, 1f);
-        if (awardedSpinsText != null) awardedSpinsText.rectTransform.localScale = Vector3.one;
-        if (congratulationsTitle != null) congratulationsTitle.anchoredPosition = congratulationsTitleHome;
-        if (freeGamesAwardedTitle != null) freeGamesAwardedTitle.anchoredPosition = freeGamesAwardedTitleHome;
-    }
-
-    // Killing a scale-up before it finishes also stops its pulse from ever starting, since a killed
-    // tween never runs its OnComplete.
-    private void KillTitleTweens()
-    {
-        foreach (var tween in titleTweens) tween?.Kill();
-        titleTweens.Clear();
-    }
-
-    private static void SetTitleScale(RectTransform title, float scale)
-    {
-        if (title != null) title.localScale = Vector3.one * scale;
     }
 
     #endregion
 
     #region Helpers
 
-    // Counts, not money — ToSpriteDigits rather than ToSpriteMoney, so 10 stays "10" and not "10.00".
-    private void WriteCounter(int remaining, int total)
+    private void WriteCounter(int played, int total)
     {
-        if (remainingSpinsText != null) remainingSpinsText.text = SpriteTextFormatter.ToSpriteDigits(remaining.ToString());
-        if (totalSpinsText != null) totalSpinsText.text = SpriteTextFormatter.ToSpriteDigits(total.ToString());
+        if (playedSpinsText != null) playedSpinsText.text = SpriteTextFormatter.ToSpriteDigits(Mathf.Max(0, played).ToString());
+        if (totalSpinsText != null) totalSpinsText.text = SpriteTextFormatter.ToSpriteDigits(Mathf.Max(0, total).ToString());
     }
 
-    private void StopActiveSequence()
+    // The panel on or off, its CanvasGroup (if it has one) at the given alpha.
+    private void SetPanel(bool on, float alpha)
     {
-        if (activeSequence != null)
+        if (counterPanel == null) return;
+
+        CanvasGroup panelGroup = counterPanel.GetComponent<CanvasGroup>();
+        if (panelGroup != null)
         {
-            StopCoroutine(activeSequence);
-            activeSequence = null;
+            panelGroup.DOKill();
+            panelGroup.alpha = alpha;
         }
+        counterPanel.SetActive(on);
+    }
+
+    private static void SetGroup(CanvasGroup group, bool on, float alpha)
+    {
+        if (group == null) return;
+
+        group.DOKill();
+        group.alpha = alpha;
+        group.gameObject.SetActive(on);
+    }
+
+    // Killed without completing, so an interrupted fade never calls back.
+    private void KillSequence()
+    {
+        activeSequence?.Kill();
+        activeSequence = null;
+    }
+
+    private void OnDestroy()
+    {
+        KillSequence();
     }
 
     #endregion

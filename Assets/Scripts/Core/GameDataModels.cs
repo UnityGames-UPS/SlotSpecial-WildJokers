@@ -103,28 +103,30 @@ public class ServerFreeSpinsFeature
     public int spinsCount;         // spins awarded per trigger: 10
     // Zero-based: one Drum on each of these reels triggers. [1,2,3] = reels 2, 3 and 4.
     public List<int> triggerReels;
-    // Zero-based. Drums on these reels earn a near-miss respin of respinReel. The backend currently
-    // respins with both Drums on reel 1 and none on reel 2, which cannot lead to a trigger — reported.
+    // Zero-based. A Drum on each of these reels is the near miss that earns a respin of respinReel,
+    // and what the client's anticipation watches. The backend currently counts Drums instead of
+    // checking reels, here and in the trigger — reported, being fixed (BonusFreeSpins.md §9.5).
     public List<int> nearMissReels;
     public int respinReel;
 }
 
-// Ball Pick'em and Sandbell Pick send the same shape. How a round plays is still unconfirmed.
+// Ball Pick'em and Sandbell Pick send the same shape. Their results are captured
+// (SandbellPickBonus.md, BallGalePickBonus.md); neither feature is built yet.
 [Serializable]
 public class ServerPickBonusFeature
 {
     public bool enabled;
     public int? symbolId;          // the Ball or the Sandbell
-    // 3. Whether that counts cells or reels is unconfirmed — two scatters can land on one reel.
+    // 3. Counts cells, not reels — two scatters can land on one reel.
     public int triggerCount;
     public int respinReel;
-    // Whether these are multiples of the total bet or the line bet is unconfirmed.
+    // Multiples of the total bet, confirmed by the trigger captures.
     public List<double> availablePrizes;
     public double maxWinMultiplier;
 
-    // Sent and deliberately unbound: "nearMissReels", "nearMissCountRange" and "triggerProbability".
-    // Server-side maths the client has no use for, and the near-miss range contradicts triggerCount
-    // (2 to 4 when 3 already triggers) — raised with the backend.
+    // Sent and not yet bound: "nearMissReels" and "nearMissCountRange", which the near-miss rules of
+    // both bonuses need — bind them when those features are built. "triggerProbability" is
+    // server-side maths the client has no use for.
 }
 
 [Serializable]
@@ -188,8 +190,9 @@ public class ServerPlayerBalance
 [Serializable]
 public class ServerPayload
 {
-    // The line wins' total. Equal to grandTotalWin on every captured spin, but grandTotalWin is the
-    // figure to display — a feature's prize may land in the gap.
+    // NOT the line wins alone, whatever the name says: it equals grandTotalWin on every capture,
+    // including the pick-bonus triggers, where lineWins is empty and it carries the bonus prize.
+    // grandTotalWin is the figure to display.
     public double winAmount;
     // One entry per winning PAYLINE. Lines can share cells: three Jack-in-the-box 2-of-a-kinds on
     // lines 3, 9 and 13 all used the same two cells.
@@ -199,17 +202,56 @@ public class ServerPayload
     // total bet (6066.65 -> 6066.50 on a 0.05 win at a 0.20 bet).
     public double grandTotalWin;
 
+    // The near-miss respin, decided by the server in this same result: the board landed before the
+    // respin and which reel was respun. Null when the spin had none. "matrix" is the board AFTER it.
+    public ServerNearMissRespin nearMissRespin;
+    // True / 1 on a spin that carried a respin. Bound for completeness; nearMissRespin is what the
+    // client acts on.
+    public bool isRespin;
+    public int respinCount;
+
+    // Free Spins' round state. Sent on the spin that triggers and on every spin of the round; an
+    // ordinary base spin has no block at all, which reads as "not in a round" (BonusFreeSpins.md §9.4).
+    public ServerFreeSpinsResult freeSpins;
+
     // Sent and deliberately unbound:
     //  - "betAmountPerLine" and "totalBetAmount" (0.01 and 0.2 at the lowest bet): the client
-    //    already knows its own bet.
-    //  - "nearMissRespin", "isRespin" and "respinCount": the near-miss respin, bound when that
-    //    feature is built. "matrix" is already the board after any respin.
+    //    already knows its own bet. Sent on free spins too, where nothing is charged.
     //  - "netReturnRatio" (grandTotalWin over total bet): the controller derives the same ratio.
+    //  - "sandbellPickBonus" and "ballPickemBonus": bound with their features.
+}
 
-    // Gold of Luck's free-games block. Wild Jokers never sends it, so it arrives null and reads as
-    // "not in a round"; kept as the model for the free-spins state until Wild Jokers' own result is
-    // captured (BonusFreeSpins.md §9.4).
-    public ServerFreeGamesResult freeGames;
+[Serializable]
+public class ServerNearMissRespin
+{
+    public bool triggered;
+    // Zero-based reel that was respun: 3 for the Drum, 4 for the Ball and the Sandbell.
+    public int reelIndex;
+    // Row-major like matrix: the board before the respin. Only reel reelIndex differs from matrix.
+    public List<List<string>> originalMatrix;
+    // Which feature the near miss was for: "freeSpins", "sandbellPickBonus" — and "ballPickem" for
+    // the Ball, which doesn't match its init key (reported).
+    public string featureName;
+
+    // "newMatrix" (the board after the respin) is deliberately unbound: it is not always sent, and
+    // the top-level matrix is always that board.
+}
+
+[Serializable]
+public class ServerFreeSpinsResult
+{
+    // Spins were awarded ON THIS SPIN: the trigger, or a retrigger inside the round.
+    public bool triggered;
+    // This spin was played inside the round: false on the base-game spin that triggers, true on
+    // every free spin. What the round's last spin sends is not captured yet.
+    public bool active;
+    // Spins left after this one. A retrigger's spins are already folded in, so it can go up.
+    public int spinsRemaining;
+    // Spins awarded in the round so far, retriggers included.
+    public int totalSpins;
+    // The round's running total in cash, this spin included. Excludes the trigger spin's own win,
+    // which was paid on that spin.
+    public double totalWinCash;
 }
 
 [Serializable]
@@ -237,27 +279,6 @@ public class ServerCell
 {
     public int row;
     public int col;
-}
-
-// Gold of Luck — absent from Wild Jokers. Kept until Wild Jokers' free-spins result is captured.
-[Serializable]
-public class ServerFreeGamesResult
-{
-    // Spins played so far INCLUDING this one: 0 on the spin that triggers a round, 3 on the last of
-    // three. After the spin, like remaining.
-    public int played;
-    // Spins left after this one. On the trigger spin itself, the whole award.
-    public int remaining;
-    // The round's running total: the sum of the FREE spins' wins. The trigger spin's own win is
-    // not in it — it reads 0 there.
-    public double totalFreeGamesWin;
-
-    // Sent and deliberately unbound, because both read differently from their old namesakes:
-    //  - "inFreeGames" is the state AFTER the spin. It is true on the trigger spin and false on the
-    //    last free spin, itself a free game. It is not "this spin was free".
-    //  - "triggered" stays true for every spin of a round, the last included, and is not a
-    //    per-spin trigger flag.
-    // "totalAwarded" is sent as well; the controller derives the same figure from played + remaining.
 }
 
 #endregion
@@ -307,14 +328,21 @@ public class GameConfig
     // symbol, leave nothing out".
     public int wildSymbolId = -1;
     // A Gold of Luck leftover: that game had one scatter, Wild Jokers has three, so this resolves to
-    // whichever comes last in the symbol table (the Sandbell). Still read by the scatter anticipation
-    // and trigger code, which is reworked with the features — new code uses the per-feature ids below.
+    // whichever comes last in the symbol table (the Sandbell). Only SocketIOManager's placeholder
+    // opening board still reads it; everything else uses the per-feature ids below.
     public int scatterSymbolId = -1;
 
     // Each feature's symbol, from features.<feature>.symbolId. -1 when the init doesn't name one.
     public int freeSpinsSymbolId = -1;      // the Drum
     public int ballBonusSymbolId = -1;      // the Ball
     public int sandbellBonusSymbolId = -1;  // the Sandbell
+
+    // Free Spins, from features.freeSpins. Reels are zero-based. Empty lists / -1 when not sent, which
+    // switches the Drum anticipation off rather than guessing.
+    public int freeSpinsCount;                                   // spins per trigger: 10
+    public List<int> freeSpinsTriggerReels = new List<int>();     // [1,2,3]: a Drum on each triggers
+    public List<int> freeSpinsNearMissReels = new List<int>();    // [1,2]: a Drum on each is the near miss
+    public int freeSpinsRespinReel = -1;                          // 3: the reel the near miss respins
 }
 
 [Serializable]
@@ -357,17 +385,34 @@ public class SpinResult
     // Everything the spin paid, from grandTotalWin. This is the figure to show and the one the
     // balance moved by.
     public double winAmount;
-    // The line wins alone. Equal to winAmount on every captured spin; a feature's prize would land in
-    // the gap.
+    // payload.winAmount. Despite the wire name it is not the line wins alone — it equals winAmount on
+    // every capture, a pick-bonus prize included — so nothing reads it.
     public double lineWinAmount;
 
     // One entry per winning payline.
     public List<WinLine> winLines;
     public PlayerData playerData;
 
-    // The free-spins state, from Gold of Luck's freeGames block. Wild Jokers never sends that block,
-    // so this always reads "not in a round" until its own result shape is bound.
+    // The free-spins state, from payload.freeSpins. Never null.
     public FreeGameData freeGame;
+
+    // The near-miss respin, or null when the spin had none. resultMatrix is the board after it.
+    public RespinData respin;
+}
+
+/// <summary>
+/// A near-miss respin decided by the server: land originalMatrix, then respin reelIndex onto the
+/// result's final board.
+/// </summary>
+[Serializable]
+public class RespinData
+{
+    // Zero-based reel to respin.
+    public int reelIndex;
+    // Column-major like resultMatrix: the board the reels land on before the respin.
+    public List<List<int>> originalMatrix;
+    // The feature the near miss was for, as the server names it ("freeSpins", ...).
+    public string featureName;
 }
 
 /// <summary>
@@ -392,22 +437,30 @@ public class WinLine
 }
 
 /// <summary>
-/// The free-games facts for one spin, mapped from payload.freeGames onto the meanings the
-/// controller was built around. The mapping lives in the converter so the controller never sees
-/// the wire's post-spin flags — see ServerFreeGamesResult.
+/// The Free Spins facts for one spin, from payload.freeSpins (BonusFreeSpins.md §9.4).
+/// A base-game trigger is spinsAwarded and not active; a retrigger is spinsAwarded and active.
 /// </summary>
 [Serializable]
 public class FreeGameData
 {
+    // The block was sent. False on an ordinary base spin, and every other field is then zero.
+    public bool present;
+
+    // Spins were awarded on this spin — the trigger, or a retrigger inside the round.
+    public bool spinsAwarded;
+
+    // This spin was played inside the round. False on the base-game spin that triggers.
+    public bool active;
+
     // Spins left AFTER this one. Retriggers are folded in, so it can go up as well as down.
     public int spinsRemaining;
 
-    // Spins were awarded on this spin. The controller only reads it inside a round, where it marks a
-    // retrigger. Gold of Luck set it from its wheel, which is gone, so nothing sets it until Wild
-    // Jokers' trigger flag is bound (BonusFreeSpins.md §9.4).
-    public bool spinsAwarded;
+    // Spins awarded in the round so far, retriggers included. The counter's Y; its X, the spins
+    // played, is totalSpins - spinsRemaining.
+    public int totalSpins;
 
-    // The round's running total, server-authoritative. Excludes the trigger spin's own win.
+    // The round's running total, server-authoritative, this spin included. Excludes the trigger
+    // spin's own win.
     public double roundWin;
 }
 
@@ -525,6 +578,19 @@ public static class InitDataConverter
         config.ballBonusSymbolId = ResolveFeatureSymbolId(features?.ballPickemBonus?.symbolId, "ballPickemBonus", config);
         config.sandbellBonusSymbolId = ResolveFeatureSymbolId(features?.sandbellPickBonus?.symbolId, "sandbellPickBonus", config);
 
+        var freeSpins = features?.freeSpins;
+        if (freeSpins != null)
+        {
+            config.freeSpinsCount = freeSpins.spinsCount;
+            if (freeSpins.triggerReels != null) config.freeSpinsTriggerReels = new List<int>(freeSpins.triggerReels);
+            if (freeSpins.nearMissReels != null) config.freeSpinsNearMissReels = new List<int>(freeSpins.nearMissReels);
+            config.freeSpinsRespinReel = freeSpins.respinReel;
+        }
+        else
+        {
+            UnityEngine.Debug.LogError("[InitDataConverter] Init carried no features.freeSpins — the Drum anticipation is off.");
+        }
+
         return config;
     }
 
@@ -634,9 +700,8 @@ public static class InitDataConverter
     {
         var payload = serverResponse?.payload;
 
-        // grandTotalWin is the spin's total and passes straight through. payload.winAmount is the line
-        // wins alone, so it is kept separately and never used as the figure to show. Nothing is
-        // summed here.
+        // grandTotalWin is the spin's total and passes straight through. payload.winAmount is kept
+        // separately and never used as the figure to show. Nothing is summed here.
         double totalWin = payload?.grandTotalWin ?? 0;
         double newBalance = serverResponse?.player?.balance ?? CalculateNewBalance(currentBalance, totalWin);
 
@@ -653,24 +718,52 @@ public static class InitDataConverter
                 currentBetIndex = 0
             },
 
-            freeGame = ConvertFreeGame(payload?.freeGames)
+            freeGame = ConvertFreeGame(payload?.freeSpins),
+            respin = ConvertRespin(payload?.nearMissRespin, gameConfig)
         };
     }
 
     // Never returns null, so the controller can read it without guarding every access. A missing
-    // block is indistinguishable from "not in a round", which is the correct reading either way.
-    //
-    // spinsAwarded is left false: Gold of Luck derived it from its wheel, and the wire's
-    // freeGames.triggered stays true for the whole round, so it cannot say which spin did the
-    // awarding. Wild Jokers' own trigger flag goes here once it is captured.
-    private static FreeGameData ConvertFreeGame(ServerFreeGamesResult serverFreeGames)
+    // block is an ordinary base spin: not in a round, nothing awarded.
+    private static FreeGameData ConvertFreeGame(ServerFreeSpinsResult serverFreeSpins)
     {
-        if (serverFreeGames == null) return new FreeGameData();
+        if (serverFreeSpins == null) return new FreeGameData();
 
         return new FreeGameData
         {
-            spinsRemaining = serverFreeGames.remaining,
-            roundWin = serverFreeGames.totalFreeGamesWin
+            present = true,
+            spinsAwarded = serverFreeSpins.triggered,
+            active = serverFreeSpins.active,
+            spinsRemaining = serverFreeSpins.spinsRemaining,
+            totalSpins = serverFreeSpins.totalSpins,
+            roundWin = serverFreeSpins.totalWinCash
+        };
+    }
+
+    // Null unless the server actually respun a reel. A respin without a usable board or reel is
+    // logged and dropped: the client then just lands the final board, which is never wrong.
+    private static RespinData ConvertRespin(ServerNearMissRespin serverRespin, GameConfig gameConfig)
+    {
+        if (serverRespin == null || !serverRespin.triggered) return null;
+
+        int reelCount = gameConfig != null ? gameConfig.reelCount : 5;
+        if (serverRespin.reelIndex < 0 || serverRespin.reelIndex >= reelCount)
+        {
+            UnityEngine.Debug.LogError($"[InitDataConverter] nearMissRespin.reelIndex {serverRespin.reelIndex} is outside the {reelCount} reels — respin ignored.");
+            return null;
+        }
+
+        if (serverRespin.originalMatrix == null || serverRespin.originalMatrix.Count == 0)
+        {
+            UnityEngine.Debug.LogError("[InitDataConverter] nearMissRespin carried no originalMatrix — respin ignored.");
+            return null;
+        }
+
+        return new RespinData
+        {
+            reelIndex = serverRespin.reelIndex,
+            originalMatrix = ConvertMatrixToColumns(serverRespin.originalMatrix, gameConfig),
+            featureName = serverRespin.featureName
         };
     }
 
