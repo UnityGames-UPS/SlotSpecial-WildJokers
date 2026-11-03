@@ -218,11 +218,45 @@ public class ServerPayload
     // (SandbellPickBonus.md §8.2). Absent on every other spin.
     public ServerSandbellPickBonus sandbellPickBonus;
 
+    // The Ball Gale Pick, whole, on the spin that triggers it: every pick, in order, decided with the
+    // spin — each click only chooses which gem shows the next one (BallGalePickBonus.md §9.2).
+    public ServerBallPickemBonus ballPickemBonus;
+
     // Sent and deliberately unbound:
     //  - "betAmountPerLine" and "totalBetAmount" (0.01 and 0.2 at the lowest bet): the client
     //    already knows its own bet. Sent on free spins too, where nothing is charged.
     //  - "netReturnRatio" (grandTotalWin over total bet): the controller derives the same ratio.
-    //  - "ballPickemBonus": bound with its feature.
+}
+
+[Serializable]
+public class ServerBallPickemBonus
+{
+    public string featureName;     // "ballPickemBonus"
+    public bool triggered;
+    // The picks in the order the player makes them; the last has isEnd (and isCollect).
+    public List<ServerBallPick> picks;
+    // The picks' values summed (× total bet).
+    public double totalWinMultiplier;
+    // The prize in cash: totalWinMultiplier × total bet. TOTAL WIN.
+    public double winInCash;
+
+    // Sent and deliberately unbound: "grid", "gridDimensions" and "centerBox" (the backend says ignore
+    // them; "grid" is to be removed), and "triggerPositions" (the Balls' boxes come from the symbol id,
+    // as the Drum's do).
+}
+
+[Serializable]
+public class ServerBallPick
+{
+    public int pickIndex;
+    // An X value from availablePrizes, × total bet; 0 on the COLLECT pick.
+    public double multiplier;
+    // The last pick: picking ends here.
+    public bool isEnd;
+    // The COLLECT pick, worth nothing. Always equal to isEnd (backend); each is read for its own job.
+    public bool isCollect;
+
+    // "revealedPrize" (= multiplier) and "revealed" ("x15" / "end") are sent and deliberately unbound.
 }
 
 [Serializable]
@@ -431,6 +465,9 @@ public class SpinResult
 
     // The Sandbell Pick this spin won, or null.
     public SandbellPickData sandbellPick;
+
+    // The Ball Gale Pick this spin won, or null.
+    public BallGalePickData ballGalePick;
 }
 
 /// <summary>
@@ -449,6 +486,31 @@ public class SandbellPickData
     public List<double> missedValues;
     // The prize in cash, the server's figure: TOTAL WIN.
     public double prize;
+}
+
+/// <summary>
+/// A won Ball Gale Pick (BallGalePickBonus.md §6, §9.2): the picks in the order they are revealed —
+/// the n-th click shows picks[n] — and the prize. Which gem shows which pick is the player's click.
+/// </summary>
+[Serializable]
+public class BallGalePickData
+{
+    // In pickIndex order. The last has isEnd.
+    public List<BallPick> picks;
+    // The prize in cash, the server's figure: TOTAL WIN. Never the client's sum of the values.
+    public double prize;
+}
+
+/// <summary>One revealed gem: an X value, or COLLECT.</summary>
+[Serializable]
+public class BallPick
+{
+    // The X value (× total bet). 0 on COLLECT.
+    public double value;
+    // Shows COLLECT instead of a value, and adds nothing to the total.
+    public bool isCollect;
+    // Picking ends after this one.
+    public bool isEnd;
 }
 
 /// <summary>
@@ -771,7 +833,49 @@ public static class InitDataConverter
 
             freeGame = ConvertFreeGame(payload?.freeSpins),
             respin = ConvertRespin(payload?.nearMissRespin, gameConfig),
-            sandbellPick = ConvertSandbellPick(payload?.sandbellPickBonus, gameConfig)
+            sandbellPick = ConvertSandbellPick(payload?.sandbellPickBonus, gameConfig),
+            ballGalePick = ConvertBallGalePick(payload?.ballPickemBonus)
+        };
+    }
+
+    // Null unless the bonus was won with at least one pick. The picks are put in pickIndex order; the
+    // server's order already is, but nothing depends on that.
+    private static BallGalePickData ConvertBallGalePick(ServerBallPickemBonus serverBonus)
+    {
+        if (serverBonus == null || !serverBonus.triggered) return null;
+
+        var picks = new List<ServerBallPick>();
+        if (serverBonus.picks != null)
+        {
+            foreach (ServerBallPick pick in serverBonus.picks)
+            {
+                if (pick != null) picks.Add(pick);
+            }
+        }
+
+        if (picks.Count == 0)
+        {
+            UnityEngine.Debug.LogError("[InitDataConverter] ballPickemBonus carried no picks — bonus ignored.");
+            return null;
+        }
+
+        picks.Sort((a, b) => a.pickIndex.CompareTo(b.pickIndex));
+
+        var converted = new List<BallPick>(picks.Count);
+        foreach (ServerBallPick pick in picks)
+        {
+            converted.Add(new BallPick
+            {
+                value = pick.multiplier,
+                isCollect = pick.isCollect,
+                isEnd = pick.isEnd
+            });
+        }
+
+        return new BallGalePickData
+        {
+            picks = converted,
+            prize = serverBonus.winInCash
         };
     }
 

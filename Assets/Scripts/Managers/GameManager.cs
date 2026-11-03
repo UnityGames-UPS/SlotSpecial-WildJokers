@@ -14,6 +14,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] private FeaturePopupView featurePopupView;
     [Tooltip("The Sandbell Pick's pick cells (SandbellPickView, on PickCells) — PICK ME, the values, the explosion.")]
     [SerializeField] private SandbellPickView sandbellPickView;
+    [Tooltip("The Ball Gale Pick's panel (BallGalePickView, on BallGalePick) — the slide, the gems, the total.")]
+    [SerializeField] private BallGalePickView ballGalePickView;
 
     [Header("Spin Settings")]
     [SerializeField] private float normalSpinDuration = 3.5f;
@@ -28,10 +30,12 @@ public class GameManager : MonoBehaviour
     private const float SandbellRevealHold = 2f;     // the revealed values animate this long before TOTAL WIN
     private const float TotalWinStayHold = 1.5f;     // TOTAL WIN stays this long after its count-up, then fades
 
-    // The near-miss respins' featureNames the client plays — the init's keys. The Ball's respin isn't
-    // built yet: its spins land straight on the final board.
+    // The near-miss respins' featureNames the client plays — the init's keys. The Ball's respin is
+    // sent as "ballPickem" (reported: it should be the init's "ballPickemBonus"), so both are taken.
     private const string FreeSpinsFeatureName = "freeSpins";
     private const string SandbellPickFeatureName = "sandbellPickBonus";
+    private const string BallPickFeatureName = "ballPickemBonus";
+    private const string BallPickRespinFeatureName = "ballPickem";
 
     // The big-win popup is switched off game-wide for now (owner, 2026-11-03). Set true to bring it
     // back; its threshold is bigWinMultiplierThreshold below.
@@ -126,10 +130,11 @@ public class GameManager : MonoBehaviour
         currentState = GameState.Idle;
 
         // The feature views start in the base game's look whatever the scene was saved with: logo on,
-        // Free Game panel, black film and feature popup off.
+        // Free Game panel, black film and feature popup off, the reels in place and the gem panel off.
         if (freeGameView != null) freeGameView.ResetToBaseGame();
         if (featurePopupView != null) featurePopupView.HideImmediate();
         if (sandbellPickView != null) sandbellPickView.HideImmediate();
+        if (ballGalePickView != null) ballGalePickView.ResetToBaseGame();
 
         uiManager.OnGameInitialized();
     }
@@ -335,15 +340,23 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    // The respin this spin carries for a built feature (Free Spins, Sandbell Pick), or null. A Ball
-    // respin returns null too: that feature isn't built, so its spins land straight on the final board.
+    // The respin this spin carries for one of the three features, or null. An unknown featureName
+    // returns null, and its spin lands straight on the final board.
     private RespinData GetPlayableRespin(SpinResult result)
     {
         RespinData respin = result != null ? result.respin : null;
         if (respin == null || respin.originalMatrix == null) return null;
-        return respin.featureName == FreeSpinsFeatureName || respin.featureName == SandbellPickFeatureName
-            ? respin
-            : null;
+
+        switch (respin.featureName)
+        {
+            case FreeSpinsFeatureName:
+            case SandbellPickFeatureName:
+            case BallPickFeatureName:
+            case BallPickRespinFeatureName:
+                return respin;
+            default:
+                return null;
+        }
     }
 
     private void OnReelsStoppedComplete()
@@ -414,6 +427,14 @@ public class GameManager : MonoBehaviour
         if (!isInFreeSpins && lastResult != null && lastResult.sandbellPick != null)
         {
             StartCoroutine(PlaySandbellPick());
+            return;
+        }
+
+        // And the Ball Gale Pick. Base game only (its rules). A spin that won both pick bonuses would
+        // play the Sandbell's only — open with the backend (BallGalePickBonus.md §11).
+        if (!isInFreeSpins && lastResult != null && lastResult.ballGalePick != null)
+        {
+            StartCoroutine(PlayBallGalePick());
             return;
         }
 
@@ -1072,6 +1093,123 @@ public class GameManager : MonoBehaviour
         bool popupGone = featurePopupView == null;
         if (featurePopupView != null) featurePopupView.HideTotalWin(() => popupGone = true);
         yield return new WaitUntil(() => popupGone);
+
+        // Spin is live again, keeping the prize in the win box until the next spin.
+        uiManager.SetFeatureButtonLock(false);
+        uiManager.ReleaseSpinButton(true);
+        currentState = GameState.Idle;
+
+        if (ShouldResumeAutoPlay())
+        {
+            ResumeAutoPlay();
+        }
+    }
+
+    #endregion
+
+    #region Ball Gale Pick
+
+    // The Ball Gale Pick (BallGalePickBonus.md §5–§7), all on the spin that won it — no pick is sent to
+    // the server; each click only chooses which gem shows the next pick:
+    //  1. buttons locked, autoplay parked, the win box on GOOD LUCK, the balance held at its pre-result
+    //     figure; the trigger spin's line wins are paid by the server but never shown (owner);
+    //  2. win boxes on the Balls, then CONGRATULATIONS, fading on its own;
+    //  3. the reels slide down, the logo fades, the gem panel slides up;
+    //  4. pick after pick: the n-th click breaks that gem and shows picks[n], the box adds it up —
+    //     until the pick the server marks isEnd (COLLECT);
+    //  5. TOTAL WIN counts up to the prize, and waits for TAKE.
+    // The bet's money is the server's winInCash throughout; the panel's total is for show.
+    private IEnumerator PlayBallGalePick()
+    {
+        SpinResult result = lastResult;
+        BallGalePickData bonus = result.ballGalePick;
+
+        // ShowingWin before suspending autoplay, so StopAutoPlay doesn't start a line walk.
+        currentState = GameState.ShowingWin;
+        SuspendAutoPlayForFeature();
+        uiManager.SetFeatureButtonLock(true);
+
+        heldBalance = balanceBeforeResult;
+        balanceHeld = true;
+        uiManager.RefreshFeatureDisplays();   // GOOD LUCK in the win box, the held balance
+        uiManager.SetSpinStopButtonStates(isSpinningState: false, isInteractable: false);
+
+        // The spin is closed out here, as the other features do: nothing must hand it to
+        // ProcessSpinResult later.
+        if (result.playerData != null) playerData = result.playerData;
+        lastResult = null;
+
+        AudioManager.Instance?.PlayScatterTrigger();
+        if (slotView != null)
+        {
+            slotView.ShowFeatureTriggerBoxes(gameConfig != null ? gameConfig.ballBonusSymbolId : -1);
+            slotView.SetSymbolTapsBlocked(true);
+        }
+        yield return new WaitForSeconds(TriggerBoxesHold);
+
+        bool congratulated = featurePopupView == null;
+        if (featurePopupView != null) featurePopupView.ShowBallGalePickAwarded(() => congratulated = true);
+        yield return new WaitUntil(() => congratulated);
+
+        bool entered = ballGalePickView == null;
+        if (ballGalePickView != null) ballGalePickView.EnterBonus(() => entered = true);
+        yield return new WaitUntil(() => entered);
+
+        // The reels are off screen: their boxes come down unseen, so they return showing the trigger
+        // board as it landed (owner).
+        if (slotView != null) slotView.ClearWinPresentation();
+
+        double total = 0;
+        for (int i = 0; i < bonus.picks.Count; i++)
+        {
+            BallPick pick = bonus.picks[i];
+
+            int gem = -1;
+            bool clicked = ballGalePickView == null;
+            if (ballGalePickView != null) ballGalePickView.OpenPicking(g => { gem = g; clicked = true; });
+            yield return new WaitUntil(() => clicked);
+
+            if (!pick.isCollect) total += pick.value;
+
+            bool revealed = ballGalePickView == null;
+            if (ballGalePickView != null) ballGalePickView.RevealGem(gem, pick, total, () => revealed = true);
+            yield return new WaitUntil(() => revealed);
+
+            if (pick.isEnd) break;
+
+            if (i == bonus.picks.Count - 1)
+            {
+                Debug.LogWarning("[GameManager] Ball Gale Pick: the picks ran out without one marked isEnd — ending here.");
+            }
+        }
+
+        if (ballGalePickView != null) ballGalePickView.EndPicking();
+
+        bool countedUp = featurePopupView == null;
+        if (featurePopupView != null) featurePopupView.ShowTotalWin(bonus.prize, () => countedUp = true);
+        yield return new WaitUntil(() => countedUp);
+
+        double prize = bonus.prize;
+        pendingFeatureTake = () => StartCoroutine(BallGalePickOutro(prize));
+        uiManager.SetSpinButtonMode(UIManager.SpinButtonMode.FeatureTake);
+    }
+
+    // TAKE (BallGalePickBonus.md §7): the popup fades fully, the panel slides down, the logo fades in,
+    // the reels slide back up; then the win box shows the prize and the balance the server's figure.
+    private IEnumerator BallGalePickOutro(double prize)
+    {
+        bool popupGone = featurePopupView == null;
+        if (featurePopupView != null) featurePopupView.HideTotalWin(() => popupGone = true);
+        yield return new WaitUntil(() => popupGone);
+
+        bool exited = ballGalePickView == null;
+        if (ballGalePickView != null) ballGalePickView.ExitBonus(() => exited = true);
+        yield return new WaitUntil(() => exited);
+
+        balanceHeld = false;
+        uiManager.ShowFeaturePayout(prize);
+
+        if (slotView != null) slotView.SetSymbolTapsBlocked(false);
 
         // Spin is live again, keeping the prize in the win box until the next spin.
         uiManager.SetFeatureButtonLock(false);

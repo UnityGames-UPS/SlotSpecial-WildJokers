@@ -35,6 +35,8 @@ public class FeaturePopupView : MonoBehaviour
     [SerializeField] private GameObject congratulationsFreeSpins;
     [Tooltip("CongratulationsSandbellPick — shown when the Sandbell Pick is won.")]
     [SerializeField] private GameObject congratulationsSandbellPick;
+    [Tooltip("CongratulationsBallGale — shown when the Ball Gale Pick is won.")]
+    [SerializeField] private GameObject congratulationsBallGalePick;
     [Tooltip("TotalWin — the round's total, counted up, until TAKE.")]
     [SerializeField] private GameObject totalWin;
 
@@ -114,6 +116,16 @@ public class FeaturePopupView : MonoBehaviour
     {
         AudioManager.Instance?.PlayCongratulations();
         ShowThenFade(congratulationsSandbellPick, CongratulationsHold, onClosed);
+    }
+
+    /// <summary>
+    /// CONGRATULATIONS! YOU WON BALL GALE PICK BONUS: shows, holds, fades out on its own. onClosed
+    /// fires once it has gone.
+    /// </summary>
+    internal void ShowBallGalePickAwarded(Action onClosed)
+    {
+        AudioManager.Instance?.PlayCongratulations();
+        ShowThenFade(congratulationsBallGalePick, CongratulationsHold, onClosed);
     }
 
     /// <summary>
@@ -254,6 +266,7 @@ public class FeaturePopupView : MonoBehaviour
         if (mysteryRespin != null) mysteryRespin.SetActive(mysteryRespin == message);
         if (congratulationsFreeSpins != null) congratulationsFreeSpins.SetActive(congratulationsFreeSpins == message);
         if (congratulationsSandbellPick != null) congratulationsSandbellPick.SetActive(congratulationsSandbellPick == message);
+        if (congratulationsBallGalePick != null) congratulationsBallGalePick.SetActive(congratulationsBallGalePick == message);
         if (totalWin != null) totalWin.SetActive(totalWin == message);
     }
 
