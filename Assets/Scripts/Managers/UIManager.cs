@@ -610,6 +610,14 @@ public class UIManager : MonoBehaviour
         UpdateBalanceDisplay();
     }
 
+    // A feature has finished paying out: the win box shows its prize, and the balance whatever
+    // GameManager.DisplayBalance now gives — the server's, once the feature's hold is released.
+    internal void ShowFeaturePayout(double amount)
+    {
+        UpdateWinDisplay(amount);
+        UpdateBalanceDisplay();
+    }
+
     internal void TriggerBigWinPopup(SpinResult result, System.Action onComplete = null)
     {
         double winAmount = (result != null) ? result.winAmount : 0;

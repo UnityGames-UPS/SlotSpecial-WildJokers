@@ -78,7 +78,7 @@ public class SlotView : MonoBehaviour
         { 6, DefaultSymbolAnimationSpeed },  // 10
         { 7, DefaultSymbolAnimationSpeed },  // Drum
         { 8, DefaultSymbolAnimationSpeed },  // Ball
-        { 9, DefaultSymbolAnimationSpeed }   // Sandbell
+        { 9, 60f }                           // Sandbell — 60 frames, so 60 plays at 24 fps: ≈ 2.5 s a loop
     };
 
     // Internal array built from named sprites
@@ -194,6 +194,10 @@ public class SlotView : MonoBehaviour
     // The win box clip's speed. ImageAnimation holds each frame for frames ÷ (24 × speed) seconds,
     // so a speed equal to the frame count plays at 24 fps: 33 frames, about 1.4 s a loop.
     private const float winBoxAnimationSpeed = 33f;
+
+    // True while a feature takes the board's clicks itself (the Sandbell Pick): the symbol info card
+    // stays shut. Set by the controller.
+    private bool symbolTapsBlocked;
     [Tooltip("The per-line win amount, ONE PER ROW, top to bottom — element 0 is the top row. This game draws no payline graphics: a win is shown by animating its symbols and putting its payout on the middle reel, so only three positions are ever needed.")]
     [SerializeField] private TMPro.TMP_Text[] winLineAmounts = new TMPro.TMP_Text[3];
 
@@ -367,7 +371,8 @@ public class SlotView : MonoBehaviour
 
     internal void OnSymbolClicked(int col, int row, RectTransform symbolRect)
     {
-        if (isSpinning)
+        // During the Sandbell Pick only the Sandbells take clicks — through their pick cells.
+        if (isSpinning || symbolTapsBlocked)
         {
             if (symbolInfoCard != null) symbolInfoCard.HideCard();
             return;
@@ -803,23 +808,31 @@ public class SlotView : MonoBehaviour
     }
 
     /// <summary>
-    /// Which reels are held back to tease a trigger. Only Free Spins anticipates today
-    /// (BonusFreeSpins.md §3); Sandbell Pick and Ball Gale Pick add their own rules when built.
-    ///
-    /// <b>The Drum:</b> once every near-miss reel (the init's nearMissReels — reels 2 and 3) shows a
-    /// Drum, every reel after the last of them is held — reels 4 and 5 — until one of them completes
-    /// the trigger (a Drum on each of triggerReels). Reel 4 landing the third Drum therefore ends it:
-    /// reel 5 is not held. Reel 5 can never show a Drum, but is held when reel 4 misses (owner).
-    ///
-    /// Reels covered, not Drums counted: two Drums on reel 2 are not a near miss. Decided on the
-    /// board the reels land on — before any respin — so a respin that completes the trigger still
-    /// reads as a near miss first.
+    /// Which reels are held back to tease a trigger: the union of each feature's rule. Free Spins and
+    /// Sandbell Pick anticipate; Ball Gale Pick never does (its spec's §3). Decided on the board the
+    /// reels land on — before any respin — so a respin that completes a trigger still reads as a near
+    /// miss first.
     /// </summary>
     private void ComputeAnticipatedReels(List<List<int>> resultMatrix, HashSet<int> results)
     {
         GameConfig config = gameManager != null ? gameManager.gameConfig : null;
         if (resultMatrix == null || config == null) return;
 
+        AddDrumAnticipation(resultMatrix, config, results);
+
+        // The Sandbell Pick is base game only, so a free spin never teases it.
+        if (!gameManager.isInFreeSpins) AddSandbellAnticipation(resultMatrix, config, results);
+    }
+
+    /// <summary>
+    /// <b>The Drum</b> (BonusFreeSpins.md §3): once every near-miss reel (the init's nearMissReels —
+    /// reels 2 and 3) shows a Drum, every reel after the last of them is held — reels 4 and 5 — until
+    /// one of them completes the trigger (a Drum on each of triggerReels). Reel 4 landing the third
+    /// Drum therefore ends it: reel 5 is not held. Reel 5 can never show a Drum, but is held when
+    /// reel 4 misses (owner). Reels covered, not Drums counted: two Drums on reel 2 are not a near miss.
+    /// </summary>
+    private void AddDrumAnticipation(List<List<int>> resultMatrix, GameConfig config, HashSet<int> results)
+    {
         int drumId = config.freeSpinsSymbolId;
         List<int> nearMissReels = config.freeSpinsNearMissReels;
         if (drumId < 0 || nearMissReels == null || nearMissReels.Count == 0) return;
@@ -836,6 +849,38 @@ public class SlotView : MonoBehaviour
             results.Add(col);
             if (IsTriggerCompleteBy(resultMatrix, col, drumId, config.freeSpinsTriggerReels)) break;
         }
+    }
+
+    /// <summary>
+    /// <b>The Sandbell</b> (SandbellPickBonus.md §3): once a second Sandbell has landed, every reel
+    /// after it is held — a count of cells, so two stacked on one reel count as two. Unlike the Drum
+    /// it keeps going after the third (owner): every remaining reel can still land one.
+    /// </summary>
+    private void AddSandbellAnticipation(List<List<int>> resultMatrix, GameConfig config, HashSet<int> results)
+    {
+        int sandbellId = config.sandbellBonusSymbolId;
+        if (sandbellId < 0) return;
+
+        int landedSoFar = 0;
+        for (int col = 0; col < ReelCount; col++)
+        {
+            if (landedSoFar >= 2) results.Add(col);
+            landedSoFar += CountSymbolInColumn(resultMatrix, col, sandbellId);
+        }
+    }
+
+    // How many visible cells of one reel show the symbol.
+    private int CountSymbolInColumn(List<List<int>> matrix, int col, int symbolId)
+    {
+        if (symbolId < 0 || matrix == null || col < 0 || col >= matrix.Count || matrix[col] == null) return 0;
+
+        int count = 0;
+        int rowEnd = Mathf.Min(RowCount, matrix[col].Count);
+        for (int row = 0; row < rowEnd; row++)
+        {
+            if (matrix[col][row] == symbolId) count++;
+        }
+        return count;
     }
 
     // True once every trigger reel up to and including lastReel shows the symbol, and none lies
@@ -933,10 +978,12 @@ public class SlotView : MonoBehaviour
         // per symbol — three Drums in one column is one cue, not three. A quick stop lands every
         // reel on the same frame, so up to five can overlap there; that is accepted.
         //
-        // Only the Drum has one for now: the Ball and the Sandbell get theirs when their features
-        // are built. The Wild deliberately has none in this game.
-        int drumId = gameManager != null && gameManager.gameConfig != null ? gameManager.gameConfig.freeSpinsSymbolId : -1;
-        if (ColumnHasSymbol(currentDisplayMatrix, columnIndex, drumId))
+        // The Drum and the Sandbell have one; the Ball gets its own when its feature is built. The
+        // Wild deliberately has none in this game.
+        GameConfig cueConfig = gameManager != null ? gameManager.gameConfig : null;
+        int drumId = cueConfig != null ? cueConfig.freeSpinsSymbolId : -1;
+        int sandbellId = cueConfig != null ? cueConfig.sandbellBonusSymbolId : -1;
+        if (ColumnHasSymbol(currentDisplayMatrix, columnIndex, drumId) || ColumnHasSymbol(currentDisplayMatrix, columnIndex, sandbellId))
         {
             AudioManager.Instance?.PlayScatterLand();
         }
@@ -1127,9 +1174,31 @@ public class SlotView : MonoBehaviour
             }
         }
 
-        if (cells.Count == 0) return;
+        ShowFeatureTriggerBoxes(cells);
+    }
 
-        winAnimationCoroutine = StartCoroutine(AnimateTriggerCells(cells));
+    /// <summary>
+    /// The same presentation for an explicit set of cells (flat indices) — the Sandbell Pick's, which
+    /// come from the server's bonus.
+    /// </summary>
+    internal void ShowFeatureTriggerBoxes(List<int> cells)
+    {
+        KillWinTweens();
+        lastWinLines = null;
+
+        if (cells == null || cells.Count == 0) return;
+
+        // A copy, so the caller's list can't change what is animating.
+        winAnimationCoroutine = StartCoroutine(AnimateTriggerCells(new List<int>(cells)));
+    }
+
+    /// <summary>
+    /// Shuts (or reopens) the symbol info card while a feature takes the board's clicks itself.
+    /// </summary>
+    internal void SetSymbolTapsBlocked(bool blocked)
+    {
+        symbolTapsBlocked = blocked;
+        if (blocked && symbolInfoCard != null) symbolInfoCard.HideCard();
     }
 
     private IEnumerator AnimateTriggerCells(List<int> cells)
@@ -1147,6 +1216,7 @@ public class SlotView : MonoBehaviour
     }
 
     #endregion
+
 
     #region Win Line Animation
 

@@ -51,9 +51,10 @@ public class FreeGameView : MonoBehaviour
 
     /// <summary>
     /// Into the round: the screen fades to black; while black, the logo goes and the panel comes with
-    /// the counter written; the screen fades back in. onDone fires once it is clear again.
+    /// the counter written; the screen fades back in. onBlack fires while the screen is fully black —
+    /// the moment for anything else to change unseen. onDone fires once it is clear again.
     /// </summary>
-    internal void EnterRound(int played, int total, Action onDone)
+    internal void EnterRound(int played, int total, Action onBlack, Action onDone)
     {
         KillSequence();
         WriteCounter(played, total);
@@ -62,6 +63,7 @@ public class FreeGameView : MonoBehaviour
         {
             SetGroup(logoGroup, false, 1f);
             SetPanel(true, 1f);
+            onBlack?.Invoke();
         }
 
         if (blackFilm == null)

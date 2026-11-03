@@ -12,6 +12,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] private FreeGameView freeGameView;
     [Tooltip("The shared feature popup (FeaturePopupView) — MYSTERY RESPIN, CONGRATULATIONS, TOTAL WIN.")]
     [SerializeField] private FeaturePopupView featurePopupView;
+    [Tooltip("The Sandbell Pick's pick cells (SandbellPickView, on PickCells) — PICK ME, the values, the explosion.")]
+    [SerializeField] private SandbellPickView sandbellPickView;
 
     [Header("Spin Settings")]
     [SerializeField] private float normalSpinDuration = 3.5f;
@@ -22,9 +24,18 @@ public class GameManager : MonoBehaviour
     // A placeholder until the owner signs off the timings.
     private const float TriggerBoxesHold = 1.5f;
 
-    // The near-miss respin's featureName for Free Spins — the init's key. Respins for the other
-    // features aren't built: those spins land straight on the final board.
+    // Sandbell Pick timings — placeholders until the owner signs them off.
+    private const float SandbellRevealHold = 2f;     // the revealed values animate this long before TOTAL WIN
+    private const float TotalWinStayHold = 1.5f;     // TOTAL WIN stays this long after its count-up, then fades
+
+    // The near-miss respins' featureNames the client plays — the init's keys. The Ball's respin isn't
+    // built yet: its spins land straight on the final board.
     private const string FreeSpinsFeatureName = "freeSpins";
+    private const string SandbellPickFeatureName = "sandbellPickBonus";
+
+    // The big-win popup is switched off game-wide for now (owner, 2026-11-03). Set true to bring it
+    // back; its threshold is bigWinMultiplierThreshold below.
+    private const bool BigWinPopupEnabled = false;
 
     [Header("Win Settings")]
     // Win / total bet at or above which the big-win popup plays. Serialized, so the scene's value is
@@ -60,13 +71,19 @@ public class GameManager : MonoBehaviour
     private bool retriggerPending;
     private int retriggerTotal;
 
-    // The balance shown for the whole round: the server pays every free spin as it happens, but the
-    // player sees the pre-round balance until TAKE (BonusFreeSpins.md §7).
+    // A feature holding the shown balance back while the server's already includes its pay: Free Spins
+    // for the whole round, until TAKE (BonusFreeSpins.md §7); the Sandbell Pick until its TOTAL WIN has
+    // counted up (SandbellPickBonus.md §6).
+    private bool balanceHeld;
     private double heldBalance;
+
+    // The balance shown while the reels spun — the pre-spin balance less the bet — recorded before the
+    // result's balance replaces it. A feature that holds the balance from the start holds it here.
+    private double balanceBeforeResult;
 
     // The balance the UI shows. playerData always holds the true, server balance; this is the one
     // place a feature holds the display back.
-    internal double DisplayBalance => isInFreeSpins ? heldBalance : playerData.balance;
+    internal double DisplayBalance => balanceHeld ? heldBalance : playerData.balance;
 
     // Whether the reels stopped quickly (Quick Spin, or STOP) — a respin that follows lands quickly too.
     private bool lastStopWasQuick;
@@ -112,6 +129,7 @@ public class GameManager : MonoBehaviour
         // Free Game panel, black film and feature popup off.
         if (freeGameView != null) freeGameView.ResetToBaseGame();
         if (featurePopupView != null) featurePopupView.HideImmediate();
+        if (sandbellPickView != null) sandbellPickView.HideImmediate();
 
         uiManager.OnGameInitialized();
     }
@@ -251,6 +269,9 @@ public class GameManager : MonoBehaviour
 
         uiManager.OnSpinStarted();
 
+        // A Sandbell Pick's values stay on screen until the next spin — this one.
+        if (sandbellPickView != null) sandbellPickView.HideImmediate();
+
         if (slotView != null)
         {
             slotView.StartSpin();
@@ -288,9 +309,9 @@ public class GameManager : MonoBehaviour
 
         currentState = GameState.Stopping;
 
-        // A Free Spins respin lands the board from before it first (the anticipation reads that
-        // board too); the respin itself follows in OnReelsStoppedComplete.
-        RespinData respin = GetFreeSpinsRespin(lastResult);
+        // A respin lands the board from before it first (the anticipation reads that board too); the
+        // respin itself follows in OnReelsStoppedComplete.
+        RespinData respin = GetPlayableRespin(lastResult);
         List<List<int>> landingMatrix = respin != null ? respin.originalMatrix : lastResult.resultMatrix;
 
         lastStopWasQuick = currentSpinSpeed == SpinSpeed.QuickSpin || stopRequested;
@@ -314,13 +335,15 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    // The respin this spin carries for Free Spins, or null. A Ball or Sandbell respin returns null
-    // too: those features aren't built, so their spins land straight on the final board.
-    private RespinData GetFreeSpinsRespin(SpinResult result)
+    // The respin this spin carries for a built feature (Free Spins, Sandbell Pick), or null. A Ball
+    // respin returns null too: that feature isn't built, so its spins land straight on the final board.
+    private RespinData GetPlayableRespin(SpinResult result)
     {
         RespinData respin = result != null ? result.respin : null;
         if (respin == null || respin.originalMatrix == null) return null;
-        return respin.featureName == FreeSpinsFeatureName ? respin : null;
+        return respin.featureName == FreeSpinsFeatureName || respin.featureName == SandbellPickFeatureName
+            ? respin
+            : null;
     }
 
     private void OnReelsStoppedComplete()
@@ -329,6 +352,9 @@ public class GameManager : MonoBehaviour
         // bypassed entirely when SlotView has no reels or no result matrix to stop onto. Without this
         // the loop would run until the next spin restarted it. No-ops when already stopped.
         AudioManager.Instance?.StopSpinLoop();
+
+        // What the player saw during the spin, before the result's balance replaces it.
+        balanceBeforeResult = playerData != null ? playerData.balance : 0;
 
         if (lastResult != null)
         {
@@ -343,7 +369,7 @@ public class GameManager : MonoBehaviour
         // belongs BEFORE PresentSpinOutcome, running it from its own completion callback rather than
         // alongside it — as the Mystery Respin does. The board has to be final before any win
         // animation starts.
-        RespinData respin = GetFreeSpinsRespin(lastResult);
+        RespinData respin = GetPlayableRespin(lastResult);
         if (respin != null && slotView != null)
         {
             StartCoroutine(PlayMysteryRespin(respin));
@@ -384,13 +410,21 @@ public class GameManager : MonoBehaviour
             return;
         }
 
+        // A base-game spin that wins the Sandbell Pick, likewise. Base game only (its rules).
+        if (!isInFreeSpins && lastResult != null && lastResult.sandbellPick != null)
+        {
+            StartCoroutine(PlaySandbellPick());
+            return;
+        }
+
         if (lastResult != null && lastResult.winAmount > 0 && lastResult.winLines != null && lastResult.winLines.Count > 0)
         {
             double totalPay = GetTotalPay();
             double multiplier = totalPay > 0 ? (lastResult.winAmount / totalPay) : 0;
 
-            // No big-win popup during free spins (owner): they show their win boxes and move on.
-            if (!isInFreeSpins && multiplier >= bigWinMultiplierThreshold)
+            // The big-win popup is switched off for now (BigWinPopupEnabled), and never shows during
+            // free spins (owner): they show their win boxes and move on.
+            if (IsBigWin(multiplier))
             {
                 uiManager.DisableControlsDuringWinAnimation();
                 currentState = GameState.Idle;
@@ -423,6 +457,13 @@ public class GameManager : MonoBehaviour
                 OnWinAnimationComplete();
             }
         }
+    }
+
+    // Whether a win of this many times the total bet gets the big-win popup: never while it is switched
+    // off, and never during free spins.
+    private bool IsBigWin(double multiplier)
+    {
+        return BigWinPopupEnabled && !isInFreeSpins && multiplier >= bigWinMultiplierThreshold;
     }
 
     private IEnumerator TriggerWinPopupWithDelay(float delay, SpinResult result)
@@ -459,9 +500,8 @@ public class GameManager : MonoBehaviour
             double totalPay = GetTotalPay();
             double multiplier = totalPay > 0 ? (lastResult.winAmount / totalPay) : 0;
 
-            // Only update UI here if it wasn't already updated in PresentSpinOutcome — a big win,
-            // which never happens during free spins.
-            if (!isInFreeSpins && multiplier >= bigWinMultiplierThreshold)
+            // Only update UI here if it wasn't already updated in PresentSpinOutcome — a big win.
+            if (IsBigWin(multiplier))
             {
                 uiManager.OnSpinStopping(lastResult);
             }
@@ -835,8 +875,17 @@ public class GameManager : MonoBehaviour
 
         StartFreeSpins(award);
 
+        // The win box switches from the trigger spin's paid win to the round's running total while the
+        // screen is fully black, so the change is never seen.
         bool entered = freeGameView == null;
-        if (freeGameView != null) freeGameView.EnterRound(freeSpinsPlayed, freeSpinsTotal, () => entered = true);
+        if (freeGameView != null)
+        {
+            freeGameView.EnterRound(freeSpinsPlayed, freeSpinsTotal, uiManager.RefreshFeatureDisplays, () => entered = true);
+        }
+        else
+        {
+            uiManager.RefreshFeatureDisplays();
+        }
         yield return new WaitUntil(() => entered);
 
         pendingFeatureStart = BeginFreeSpins;
@@ -844,7 +893,8 @@ public class GameManager : MonoBehaviour
     }
 
     // The round's state, from the trigger's figures. From here the shown balance is held at the
-    // balance after the trigger spin, and the win box shows the round's running total.
+    // balance after the trigger spin — the same figure already on screen, so nothing visibly changes.
+    // The win box is switched to the round's running total by the caller, under the black fade.
     private void StartFreeSpins(FreeGameData award)
     {
         isInFreeSpins = true;
@@ -854,8 +904,7 @@ public class GameManager : MonoBehaviour
         freeSpinsRoundWin = award.roundWin;
         retriggerPending = false;
         heldBalance = playerData != null ? playerData.balance : 0;
-
-        uiManager.RefreshFeatureDisplays();
+        balanceHeld = true;
     }
 
     // START: the first free spin, straight away.
@@ -929,6 +978,7 @@ public class GameManager : MonoBehaviour
         retriggerPending = false;
 
         // The hold is off: the balance shown is the server's again.
+        balanceHeld = false;
         uiManager.UpdateBalanceDisplay();
 
         // Spin again, but without clearing the win box, which still shows the round's total.
@@ -938,6 +988,95 @@ public class GameManager : MonoBehaviour
         freeSpinsRoundWin = 0;
         currentState = GameState.Idle;
         AudioManager.Instance?.PlayBgMusic();
+
+        if (ShouldResumeAutoPlay())
+        {
+            ResumeAutoPlay();
+        }
+    }
+
+    #endregion
+
+    #region Sandbell Pick
+
+    // The Sandbell Pick (SandbellPickBonus.md §5, §6), all on the spin that won it — the pick is never
+    // sent to the server:
+    //  1. buttons locked, autoplay parked, the win box on GOOD LUCK, the balance held at its pre-result
+    //     figure; the trigger spin's line wins are paid by the server but never shown (owner);
+    //  2. CONGRATULATIONS, fading on its own;
+    //  3. the pick — every Sandbell animating with its box and a pulsing PICK ME, waiting for the click
+    //     with no time limit;
+    //  4. the reveal — the winning value on the clicked Sandbell, the missed values on the rest;
+    //  5. TOTAL WIN counts up to the prize; the win box and the server's balance then show; the popup
+    //     fades on its own; Spin is live, autoplay resumes.
+    // The Sandbells, boxes and values stay on screen until the next spin.
+    private IEnumerator PlaySandbellPick()
+    {
+        SpinResult result = lastResult;
+        SandbellPickData bonus = result.sandbellPick;
+
+        // ShowingWin before suspending autoplay, so StopAutoPlay doesn't start a line walk.
+        currentState = GameState.ShowingWin;
+        SuspendAutoPlayForFeature();
+        uiManager.SetFeatureButtonLock(true);
+
+        heldBalance = balanceBeforeResult;
+        balanceHeld = true;
+        uiManager.RefreshFeatureDisplays();   // GOOD LUCK in the win box, the held balance
+        uiManager.SetSpinStopButtonStates(isSpinningState: false, isInteractable: false);
+
+        // The spin is closed out here, as the Free Spins trigger does: nothing must hand it to
+        // ProcessSpinResult later.
+        if (result.playerData != null) playerData = result.playerData;
+        lastResult = null;
+
+        AudioManager.Instance?.PlayScatterTrigger();
+
+        bool congratulated = featurePopupView == null;
+        if (featurePopupView != null) featurePopupView.ShowSandbellPickAwarded(() => congratulated = true);
+        yield return new WaitUntil(() => congratulated);
+
+        // The Sandbells animate with their boxes (SlotView, the animation layer); their pick cells come
+        // on over them (SandbellPickView). Only the Sandbells take clicks until the pick.
+        if (slotView != null)
+        {
+            slotView.ShowFeatureTriggerBoxes(bonus.cells);
+            slotView.SetSymbolTapsBlocked(true);
+        }
+
+        // Without the pick view nothing can be clicked: the first Sandbell stands as the pick.
+        int pickedCell = bonus.cells != null && bonus.cells.Count > 0 ? bonus.cells[0] : -1;
+        bool picked = sandbellPickView == null;
+        if (sandbellPickView != null)
+        {
+            int reelCount = gameConfig != null ? gameConfig.reelCount : 5;
+            sandbellPickView.ShowPick(bonus.cells, reelCount, cell => { pickedCell = cell; picked = true; });
+        }
+        yield return new WaitUntil(() => picked);
+
+        if (slotView != null) slotView.SetSymbolTapsBlocked(false);
+
+        if (sandbellPickView != null) sandbellPickView.Reveal(pickedCell, bonus.winValue, bonus.missedValues);
+        yield return new WaitForSeconds(SandbellRevealHold);
+
+        bool countedUp = featurePopupView == null;
+        if (featurePopupView != null) featurePopupView.ShowTotalWin(bonus.prize, () => countedUp = true);
+        yield return new WaitUntil(() => countedUp);
+
+        // The count-up is done: the win box shows the prize, and the balance the server's own figure.
+        balanceHeld = false;
+        uiManager.ShowFeaturePayout(bonus.prize);
+
+        yield return new WaitForSeconds(TotalWinStayHold);
+
+        bool popupGone = featurePopupView == null;
+        if (featurePopupView != null) featurePopupView.HideTotalWin(() => popupGone = true);
+        yield return new WaitUntil(() => popupGone);
+
+        // Spin is live again, keeping the prize in the win box until the next spin.
+        uiManager.SetFeatureButtonLock(false);
+        uiManager.ReleaseSpinButton(true);
+        currentState = GameState.Idle;
 
         if (ShouldResumeAutoPlay())
         {

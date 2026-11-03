@@ -214,11 +214,41 @@ public class ServerPayload
     // ordinary base spin has no block at all, which reads as "not in a round" (BonusFreeSpins.md §9.4).
     public ServerFreeSpinsResult freeSpins;
 
+    // The Sandbell Pick, whole, on the spin that triggers it — the pick is never sent to the server
+    // (SandbellPickBonus.md §8.2). Absent on every other spin.
+    public ServerSandbellPickBonus sandbellPickBonus;
+
     // Sent and deliberately unbound:
     //  - "betAmountPerLine" and "totalBetAmount" (0.01 and 0.2 at the lowest bet): the client
     //    already knows its own bet. Sent on free spins too, where nothing is charged.
     //  - "netReturnRatio" (grandTotalWin over total bet): the controller derives the same ratio.
-    //  - "sandbellPickBonus" and "ballPickemBonus": bound with their features.
+    //  - "ballPickemBonus": bound with its feature.
+}
+
+[Serializable]
+public class ServerSandbellPickBonus
+{
+    public string featureName;     // "sandbellPickBonus"
+    public bool triggered;
+    // The winning value, on a cell of the server's choosing — the client puts it on whichever
+    // Sandbell the player clicks.
+    public ServerPickPosition pickedPosition;
+    // One per other Sandbell on the board, stacked ones included: the values the player missed.
+    public List<ServerPickPosition> unpickedPositions;
+    // The winning value again (× total bet). "prizeMultiplier" is sent too, always equal, and left
+    // unbound.
+    public double totalWinMultiplier;
+    // The prize in cash: winning value × total bet. TOTAL WIN.
+    public double winInCash;
+}
+
+[Serializable]
+public class ServerPickPosition
+{
+    public int row;
+    public int col;
+    // An X value from availablePrizes, × total bet.
+    public double multiplier;
 }
 
 [Serializable]
@@ -398,6 +428,27 @@ public class SpinResult
 
     // The near-miss respin, or null when the spin had none. resultMatrix is the board after it.
     public RespinData respin;
+
+    // The Sandbell Pick this spin won, or null.
+    public SandbellPickData sandbellPick;
+}
+
+/// <summary>
+/// A won Sandbell Pick (SandbellPickBonus.md §5, §8.2): which cells hold Sandbells and the values to
+/// reveal. The winning value goes on the Sandbell the player clicks; the missed values on the rest.
+/// </summary>
+[Serializable]
+public class SandbellPickData
+{
+    // Flat indices (row * reelCount + col) of every Sandbell, in board order: left to right, then top
+    // to bottom within a reel.
+    public List<int> cells;
+    // The winning X value (× total bet).
+    public double winValue;
+    // The missed X values, in the order the server sent them — one per other Sandbell.
+    public List<double> missedValues;
+    // The prize in cash, the server's figure: TOTAL WIN.
+    public double prize;
 }
 
 /// <summary>
@@ -719,7 +770,60 @@ public static class InitDataConverter
             },
 
             freeGame = ConvertFreeGame(payload?.freeSpins),
-            respin = ConvertRespin(payload?.nearMissRespin, gameConfig)
+            respin = ConvertRespin(payload?.nearMissRespin, gameConfig),
+            sandbellPick = ConvertSandbellPick(payload?.sandbellPickBonus, gameConfig)
+        };
+    }
+
+    // Null unless the bonus was won. The cells come from the server's positions (they match the
+    // board); only the values matter beyond that — which Sandbell shows which is the click's.
+    private static SandbellPickData ConvertSandbellPick(ServerSandbellPickBonus serverBonus, GameConfig gameConfig)
+    {
+        if (serverBonus == null || !serverBonus.triggered) return null;
+
+        if (serverBonus.pickedPosition == null)
+        {
+            UnityEngine.Debug.LogError("[InitDataConverter] sandbellPickBonus carried no pickedPosition — bonus ignored.");
+            return null;
+        }
+
+        var cells = new List<int>();
+        var missedValues = new List<double>();
+
+        if (TryGetFlatIndex(serverBonus.pickedPosition.row, serverBonus.pickedPosition.col, gameConfig, "sandbellPickBonus.pickedPosition", out int pickedCell))
+        {
+            cells.Add(pickedCell);
+        }
+
+        if (serverBonus.unpickedPositions != null)
+        {
+            for (int i = 0; i < serverBonus.unpickedPositions.Count; i++)
+            {
+                ServerPickPosition position = serverBonus.unpickedPositions[i];
+                if (position == null) continue;
+
+                missedValues.Add(position.multiplier);
+                if (TryGetFlatIndex(position.row, position.col, gameConfig, $"sandbellPickBonus.unpickedPositions[{i}]", out int cell))
+                {
+                    cells.Add(cell);
+                }
+            }
+        }
+
+        // Board order: by reel, then by row — the order the missed values are laid out in.
+        int reelCount = gameConfig != null ? gameConfig.reelCount : 5;
+        cells.Sort((a, b) =>
+        {
+            int byReel = (a % reelCount).CompareTo(b % reelCount);
+            return byReel != 0 ? byReel : (a / reelCount).CompareTo(b / reelCount);
+        });
+
+        return new SandbellPickData
+        {
+            cells = cells,
+            winValue = serverBonus.pickedPosition.multiplier,
+            missedValues = missedValues,
+            prize = serverBonus.winInCash
         };
     }
 

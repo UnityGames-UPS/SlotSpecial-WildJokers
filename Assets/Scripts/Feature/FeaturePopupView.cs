@@ -4,19 +4,26 @@ using DG.Tweening;
 
 /// <summary>
 /// The feature popup shared by all three features (BonusFreeSpins.md §8): a backdrop that rotates
-/// clockwise, a frame, and one child per message, of which exactly one is shown. A CanvasGroup on
-/// this object fades it out.
+/// clockwise, a frame, and one child per message, of which exactly one is shown.
+///
+/// This object holds the script and stays on. The popup itself is popupGroup (PopupImage in the
+/// scene): its CanvasGroup fades it, and it is what is switched on and off. The backdrop and the
+/// frame under it are switched on whenever it opens, so the scene can be saved with any of them off.
 ///
 /// Free Spins uses MYSTERY RESPIN, CONGRATULATIONS (with the awarded spin count) and TOTAL WIN (counted
-/// up). The Sandbell's and the Ball's CONGRATULATIONS children are wired when those features are
-/// built.
+/// up, taken down at TAKE). Sandbell Pick uses MYSTERY RESPIN, its own CONGRATULATIONS and TOTAL WIN
+/// (taken down on its own). The Ball's CONGRATULATIONS child is wired when that feature is built.
 ///
 /// View layer only: GameManager calls in and is called back when a message has gone. Everything is
-/// DOTween-driven rather than coroutines, because this object is switched off between uses. Every
-/// reference is optional — a missing message still calls back, so a round never stalls on it.
+/// DOTween-driven. Every reference is optional — a missing message still calls back, so a round
+/// never stalls on it.
 /// </summary>
 public class FeaturePopupView : MonoBehaviour
 {
+    [Header("Popup")]
+    [Tooltip("PopupImage — the popup's parent, holding the backdrop and the frame. Its CanvasGroup fades the popup; it is switched on to show and off to hide. Unwired, this object and its own CanvasGroup are used instead.")]
+    [SerializeField] private CanvasGroup popupGroup;
+
     [Header("Backdrop")]
     [Tooltip("PopupBackground — rotates clockwise while the popup is up.")]
     [SerializeField] private RectTransform popupBackground;
@@ -26,6 +33,8 @@ public class FeaturePopupView : MonoBehaviour
     [SerializeField] private GameObject mysteryRespin;
     [Tooltip("CongratulationsFreeSpins — shown when Free Spins are awarded, on a trigger or a retrigger.")]
     [SerializeField] private GameObject congratulationsFreeSpins;
+    [Tooltip("CongratulationsSandbellPick — shown when the Sandbell Pick is won.")]
+    [SerializeField] private GameObject congratulationsSandbellPick;
     [Tooltip("TotalWin — the round's total, counted up, until TAKE.")]
     [SerializeField] private GameObject totalWin;
 
@@ -42,26 +51,31 @@ public class FeaturePopupView : MonoBehaviour
     private const float RotationPeriod = 8f;             // seconds for one full clockwise turn of the backdrop
     private const float TotalWinCountUpDuration = 2f;    // TOTAL WIN's count from 0 to the total
 
-    private CanvasGroup canvasGroup;
-    private bool canvasGroupLooked;
+    private CanvasGroup ownCanvasGroup;
+    private bool ownCanvasGroupLooked;
     private Tween rotationTween;
     private Sequence activeSequence;
     private Tween countUpTween;
 
-    // Found on first use rather than in Awake: this object starts switched off, and Awake would not
-    // run until the first Open — after the alpha had to be set.
+    // The CanvasGroup that fades the popup: popupGroup, or — unwired — one on this object, found on
+    // first use rather than in Awake, which would not run while this object is off.
     private CanvasGroup Group
     {
         get
         {
-            if (!canvasGroupLooked)
+            if (popupGroup != null) return popupGroup;
+
+            if (!ownCanvasGroupLooked)
             {
-                canvasGroup = GetComponent<CanvasGroup>();
-                canvasGroupLooked = true;
+                ownCanvasGroup = GetComponent<CanvasGroup>();
+                ownCanvasGroupLooked = true;
             }
-            return canvasGroup;
+            return ownCanvasGroup;
         }
     }
+
+    // What is switched on to show the popup and off to hide it.
+    private GameObject PopupObject => popupGroup != null ? popupGroup.gameObject : gameObject;
 
     #region Called by GameManager
 
@@ -71,7 +85,7 @@ public class FeaturePopupView : MonoBehaviour
         KillTweens();
         StopRotation();
         ShowOnly(null);
-        gameObject.SetActive(false);
+        PopupObject.SetActive(false);
     }
 
     /// <summary>MYSTERY RESPIN: shows, holds, fades out. onClosed fires once it has gone.</summary>
@@ -90,6 +104,16 @@ public class FeaturePopupView : MonoBehaviour
 
         AudioManager.Instance?.PlayCongratulations();
         ShowThenFade(congratulationsFreeSpins, CongratulationsHold, onClosed);
+    }
+
+    /// <summary>
+    /// CONGRATULATIONS! YOU WON SANDBELL PICK BONUS: shows, holds, fades out on its own. onClosed
+    /// fires once it has gone.
+    /// </summary>
+    internal void ShowSandbellPickAwarded(Action onClosed)
+    {
+        AudioManager.Instance?.PlayCongratulations();
+        ShowThenFade(congratulationsSandbellPick, CongratulationsHold, onClosed);
     }
 
     /// <summary>
@@ -123,7 +147,7 @@ public class FeaturePopupView : MonoBehaviour
     /// <summary>TOTAL WIN goes: fades out. onHidden fires once it has gone.</summary>
     internal void HideTotalWin(Action onHidden)
     {
-        if (!gameObject.activeSelf)
+        if (!PopupObject.activeInHierarchy)
         {
             onHidden?.Invoke();
             return;
@@ -158,13 +182,21 @@ public class FeaturePopupView : MonoBehaviour
     }
 
     // Switches the popup on, fully visible, with only this message showing and the backdrop turning.
+    // Everything on the way down to the message is switched on too — this object, the popup, the
+    // backdrop and the message's frame — so none of them can be left off by how the scene was saved.
     private void Open(GameObject message)
     {
         KillTweens();
 
         ShowOnly(message);
         if (Group != null) Group.alpha = 1f;
+
         gameObject.SetActive(true);
+        PopupObject.SetActive(true);
+        if (popupBackground != null) popupBackground.gameObject.SetActive(true);
+
+        Transform frame = message.transform.parent;
+        if (frame != null) frame.gameObject.SetActive(true);
 
         StartRotation();
     }
@@ -176,7 +208,7 @@ public class FeaturePopupView : MonoBehaviour
             activeSequence = null;
             StopRotation();
             ShowOnly(null);
-            gameObject.SetActive(false);
+            PopupObject.SetActive(false);
             if (Group != null) Group.alpha = 1f;
             onClosed?.Invoke();
         }
@@ -221,6 +253,7 @@ public class FeaturePopupView : MonoBehaviour
     {
         if (mysteryRespin != null) mysteryRespin.SetActive(mysteryRespin == message);
         if (congratulationsFreeSpins != null) congratulationsFreeSpins.SetActive(congratulationsFreeSpins == message);
+        if (congratulationsSandbellPick != null) congratulationsSandbellPick.SetActive(congratulationsSandbellPick == message);
         if (totalWin != null) totalWin.SetActive(totalWin == message);
     }
 
