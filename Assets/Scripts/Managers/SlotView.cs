@@ -151,8 +151,12 @@ public class SlotView : MonoBehaviour
     [Tooltip("Shorter hold used when the player is on Turbo.")]
     [SerializeField] private float anticipationExtraTimeTurbo = 1f;
 
-    // How long a respun reel spins on Quick Spin or after STOP, where the hold is skipped: just enough
-    // to read as a spin before it lands.
+    // How long a respun reel spins (owner, 2026-11-04), on Normal and Turbo alike. The MYSTERY RESPIN
+    // sound plays from the popup until it lands.
+    private const float RespinSpinTime = 2.4f;
+
+    // How long a respun reel spins on Quick Spin or after STOP: just enough to read as a spin before it
+    // lands.
     private const float QuickRespinSpinTime = 0.3f;
 
     // Added to the computed stop time before a stop sequence stops waiting for its reels to report
@@ -266,12 +270,6 @@ public class SlotView : MonoBehaviour
     // Row count (3). Every row the server sends is live and pays, so a row index means the same thing
     // in the server payload, in currentDisplayMatrix, and in each reel's displayImages list.
     internal int RowCount => (gameManager != null && gameManager.gameConfig != null) ? gameManager.gameConfig.rowCount : 3;
-
-    // -1 rather than 0 when unknown, deliberately: 0 is a real symbol (the Wild itself), so a literal
-    // fallback would silently match it before init.
-    private int WildSymbolId => (gameManager != null && gameManager.gameConfig != null)
-        ? gameManager.gameConfig.wildSymbolId
-        : -1;
 
     // Every symbol the init's symbol table puts in the scatter group — the Drum, the Ball and the
     // Sandbell. Read from the table's group, so it covers all three whichever feature is built.
@@ -971,23 +969,8 @@ public class SlotView : MonoBehaviour
             0
         );
 
-        // ── Play reel-stop sound immediately when symbols lock in ──────────
-        AudioManager.Instance?.PlayReelStop();
-
-        // Special-symbol landing cues for this column. A cue fires at most once per REEL, not once
-        // per symbol — three Drums in one column is one cue, not three. A quick stop lands every
-        // reel on the same frame, so up to five can overlap there; that is accepted.
-        //
-        // The Drum and the Sandbell have one; the Ball gets its own when its feature is built. The
-        // Wild deliberately has none in this game.
-        GameConfig cueConfig = gameManager != null ? gameManager.gameConfig : null;
-        int drumId = cueConfig != null ? cueConfig.freeSpinsSymbolId : -1;
-        int sandbellId = cueConfig != null ? cueConfig.sandbellBonusSymbolId : -1;
-        if (ColumnHasSymbol(currentDisplayMatrix, columnIndex, drumId) || ColumnHasSymbol(currentDisplayMatrix, columnIndex, sandbellId))
-        {
-            AudioManager.Instance?.PlayScatterLand();
-        }
-        // ──────────────────────────────────────────────────────────────────
+        // No reel-stop or scatter-landing sound: the old games' clips are gone and Wild Jokers has none
+        // yet (owner, 2026-11-04).
 
         // If the next reel is being held, its effect comes in on this reel's landing slam, in green.
         // Driven off the actual event rather than a computed timestamp so it can't drift out of sync
@@ -1051,7 +1034,7 @@ public class SlotView : MonoBehaviour
     /// <summary>
     /// The near-miss respin (BonusFreeSpins.md §4): one reel, already landed on the board before the
     /// respin, spins again with the orange effect and lands on finalMatrix — the result's final
-    /// board. It spins for the anticipation hold, or briefly when quick (Quick Spin, or STOP).
+    /// board. It spins for RespinSpinTime, or briefly when quick (Quick Spin, or STOP).
     /// onLanded fires once it is at rest.
     /// </summary>
     internal void RespinReel(int reelIndex, List<List<int>> finalMatrix, bool quick, System.Action onLanded)
@@ -1096,7 +1079,7 @@ public class SlotView : MonoBehaviour
         SetAnticipationEffect(reelIndex, true, anticipationOrangeFrames);
         AudioManager.Instance?.PlayAnticipation();
 
-        float spinTime = quick ? QuickRespinSpinTime : GetAnticipationHold();
+        float spinTime = quick ? QuickRespinSpinTime : RespinSpinTime;
 
         bool landed = false;
         yield return StopSingleReel(reelIndex, finalMatrix[reelIndex], spinTime, quick, () => landed = true);
@@ -1322,7 +1305,7 @@ public class SlotView : MonoBehaviour
         // loop-complete callbacks that teardown had already cleared — one stuck coroutine per
         // interrupted win. Run inline, it stops with this one.
         yield return AnimateWinPositions(
-            allWinPositions, rounds: skipPhase2 ? 1 : totalWinRounds, announceWilds: true);
+            allWinPositions, rounds: skipPhase2 ? 1 : totalWinRounds);
 
         KillWinTweens(false);
         HidePhase1TotalWinText();
@@ -1376,8 +1359,8 @@ public class SlotView : MonoBehaviour
         //         KillWinTweens(false);
         //
         //         // Lines are a Phase 2 thing only — the total shows every winning symbol at once with
-        //         // no line drawn, then this walks them one at a time.
-        //         AudioManager.Instance?.PlayWinLineChange();
+        //         // no line drawn, then this walks them one at a time. (Its line-change sound was a
+        //         // Golden Dynasty clip, removed 2026-11-04.)
         //         ShowWinLine(winLine);
         //
         //         yield return AnimateWinPositions(winLine.positions, rounds: winLineRounds);
@@ -1416,11 +1399,6 @@ public class SlotView : MonoBehaviour
         }
     }
 
-    /// <param name="announceWilds">
-    /// True only from Phase 1. The Wild cue is once per spin, and Phase 2 cycles its lines forever
-    /// until the player spins again — so firing it there would replay the cue on every pass, for as
-    /// long as the player sat looking at the result.
-    /// </param>
     /// <param name="rounds">
     /// How many times every box and symbol clip here plays, IN STEP: they all start together, and the
     /// group waits for the slowest before going again. Left to their own loop counts they drift apart
@@ -1431,11 +1409,9 @@ public class SlotView : MonoBehaviour
     /// True only for a feature trigger's boxes (ShowFeatureTriggerBoxes), which box the scatters
     /// themselves. A line win never does — see the guard below.
     /// </param>
-    private IEnumerator AnimateWinPositions(IEnumerable<int> flatPositions, int rounds = 1, bool announceWilds = false, bool includeScatters = false)
+    private IEnumerator AnimateWinPositions(IEnumerable<int> flatPositions, int rounds = 1, bool includeScatters = false)
     {
         if (flatPositions == null) yield break;
-
-        bool wildAnnounced = false;
 
         int rowLimit = (gameManager != null && gameManager.gameConfig != null) ? gameManager.gameConfig.rowCount : 3;
 
@@ -1468,13 +1444,6 @@ public class SlotView : MonoBehaviour
             // among a win's positions it is left dimmed, with no box. Scatters get their own
             // presentation when they trigger a feature, which passes includeScatters.
             if (!includeScatters && IsScatterSymbol(symbolId)) continue;
-
-            // Once per spin, however many Wilds are winning.
-            if (announceWilds && !wildAnnounced && symbolId == WildSymbolId)
-            {
-                wildAnnounced = true;
-                AudioManager.Instance?.PlayWildAnimate();
-            }
 
             // Show the symbol first, unconditionally. Some symbols have no animation frames at all
             // (their anim list is left empty), and under the dim a skipped slot would leave a

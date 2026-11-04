@@ -410,6 +410,9 @@ public class GameManager : MonoBehaviour
         slotView.RespinReel(respin.reelIndex, result.resultMatrix, lastStopWasQuick, () => landed = true);
         yield return new WaitUntil(() => landed);
 
+        // The MYSTERY RESPIN sound runs from the popup until the reel is at rest (owner).
+        AudioManager.Instance?.StopMysteryRespin();
+
         PresentSpinOutcome();
     }
 
@@ -558,7 +561,6 @@ public class GameManager : MonoBehaviour
         // which would take the Drum boxes with it.
         yield return null;
 
-        AudioManager.Instance?.PlayScatterTrigger();
         if (slotView != null) slotView.ShowFeatureTriggerBoxes(gameConfig != null ? gameConfig.freeSpinsSymbolId : -1);
         yield return new WaitForSeconds(TriggerBoxesHold);
 
@@ -888,7 +890,6 @@ public class GameManager : MonoBehaviour
         if (result.playerData != null) playerData = result.playerData;
         lastResult = null;
 
-        AudioManager.Instance?.PlayScatterTrigger();
         if (slotView != null) slotView.ShowFeatureTriggerBoxes(gameConfig != null ? gameConfig.freeSpinsSymbolId : -1);
         yield return new WaitForSeconds(TriggerBoxesHold);
 
@@ -897,15 +898,21 @@ public class GameManager : MonoBehaviour
         StartFreeSpins(award);
 
         // The win box switches from the trigger spin's paid win to the round's running total while the
-        // screen is fully black, so the change is never seen.
+        // screen is fully black, so the change is never seen — and the music to the round's.
+        void OnBlack()
+        {
+            uiManager.RefreshFeatureDisplays();
+            AudioManager.Instance?.PlayFreeSpinsMusic();
+        }
+
         bool entered = freeGameView == null;
         if (freeGameView != null)
         {
-            freeGameView.EnterRound(freeSpinsPlayed, freeSpinsTotal, uiManager.RefreshFeatureDisplays, () => entered = true);
+            freeGameView.EnterRound(freeSpinsPlayed, freeSpinsTotal, OnBlack, () => entered = true);
         }
         else
         {
-            uiManager.RefreshFeatureDisplays();
+            OnBlack();
         }
         yield return new WaitUntil(() => entered);
 
@@ -1051,8 +1058,6 @@ public class GameManager : MonoBehaviour
         if (result.playerData != null) playerData = result.playerData;
         lastResult = null;
 
-        AudioManager.Instance?.PlayScatterTrigger();
-
         bool congratulated = featurePopupView == null;
         if (featurePopupView != null) featurePopupView.ShowSandbellPickAwarded(() => congratulated = true);
         yield return new WaitUntil(() => congratulated);
@@ -1139,7 +1144,6 @@ public class GameManager : MonoBehaviour
         if (result.playerData != null) playerData = result.playerData;
         lastResult = null;
 
-        AudioManager.Instance?.PlayScatterTrigger();
         if (slotView != null)
         {
             slotView.ShowFeatureTriggerBoxes(gameConfig != null ? gameConfig.ballBonusSymbolId : -1);

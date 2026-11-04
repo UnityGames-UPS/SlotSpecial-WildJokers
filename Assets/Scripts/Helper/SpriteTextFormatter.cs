@@ -38,4 +38,11 @@ public static class SpriteTextFormatter
         }
         return sb.ToString();
     }
+
+    // An X value ("X25", "X2.5") for the sprite assets that carry an "x" as <sprite=11> — 0-1ORANGE
+    // and 1-0 GREEN. Not for O-1GOLDEN, which has no sprite 11. "0.##": whole values stay whole.
+    internal static string ToSpriteMultiplier(double value)
+    {
+        return "<sprite=11>" + ToSpriteDigits(value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
+    }
 }

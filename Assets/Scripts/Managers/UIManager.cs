@@ -1430,7 +1430,8 @@ public class UIManager : MonoBehaviour
     {
         if (universalWinPopup == null) return;
 
-        AudioManager.Instance?.PlayBigWin();
+        // No sound: its clips were the old games' (removed 2026-11-04). The popup is switched off for
+        // now anyway (GameManager.BigWinPopupEnabled).
         isSpecialWinActive = true;
         universalWinPopupCallback = onTakePressed;
         uwpTargetWinAmount = winAmount;
@@ -1471,10 +1472,6 @@ public class UIManager : MonoBehaviour
 
             float countUpDuration = 3.8f;
 
-            // The count-up cue. No explicit wait for the landing cues to finish — this popup opens
-            // seconds after the reels stop, so they are long done by the time it runs.
-            AudioManager.Instance?.PlayWinCountUp();
-
             uwpWinTween = DOVirtual.Float(0f, (float)winAmount, countUpDuration, (val) =>
             {
                 if (bigWinAmount != null)
@@ -1513,7 +1510,6 @@ public class UIManager : MonoBehaviour
 
     private void OnUniversalWinTakeButtonClicked()
     {
-        AudioManager.Instance?.StopBigWin();
         AudioManager.Instance?.PlayTakeButton();
         CloseUniversalWinPopup();
     }
@@ -1521,8 +1517,6 @@ public class UIManager : MonoBehaviour
     private void CloseUniversalWinPopup()
     {
         if (universalWinPopup == null || !universalWinPopup.activeSelf) return;
-
-        AudioManager.Instance?.StopBigWin();
 
         if (uwpWinTween != null)
         {

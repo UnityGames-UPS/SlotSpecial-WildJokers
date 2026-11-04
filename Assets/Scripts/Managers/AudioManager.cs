@@ -47,43 +47,37 @@ public class AudioManager : MonoBehaviour
     [SerializeField] private AudioClip clipGameMainBg;
     [SerializeField] private AudioClip clipBetPlusMinus;
     [SerializeField] private AudioClip clipMaxBetReached;
-    [SerializeField] private AudioClip clipScatterTrigger;
-    [SerializeField] private AudioClip clipBigWin;
     [Tooltip("Spin button only. Stop / Take / AutoplayStop share clipPrimaryActionButton below.")]
     [SerializeField] private AudioClip clipSpinStart;
     [SerializeField] private AudioClip clipPrimaryActionButton;
     [SerializeField] private AudioClip clipGeneralButtonClick;
     [SerializeField] private AudioClip clipPopupOpenClose;
     [SerializeField] private AudioClip clipAutoplayPanelOpen;
+    [Tooltip("The winning symbols and their win boxes coming up (normal win.mp3).")]
     [SerializeField] private AudioClip clipWinPresentationStart;
-    [SerializeField] private AudioClip clipReelStop;
-    [Tooltip("One shot per reel that lands at least one Scatter (Lamp).")]
-    [SerializeField] private AudioClip clipScatterLand;
     [SerializeField] private AudioClip clipTurboButton;
 
-    [Header("Audio Clips - Golden Dynasty")]
-    [Tooltip("Phase 2 of the win presentation moving to the next win line. Fires on every change, and Phase 2 cycles until the player spins.")]
-    [SerializeField] private AudioClip clipWinLineChange;
-
-    [Tooltip("A Wild ANIMATING as part of a win — once per spin, in Phase 1 only. Wild landings have no cue.")]
-    [SerializeField] private AudioClip clipWildAnimate;
-
-    [Tooltip("The win amount counting up in the universal win popup.")]
-    [SerializeField] private AudioClip clipWinCountUp;
-
-    [Header("Audio Clips - Gold of Luck")]
-    [Tooltip("The free-games congratulations panel opening.")]
+    [Header("Audio Clips - Wild Jokers")]
+    [Tooltip("CONGRATULATIONS, for all three features (congrats bonus game.mp3).")]
     [SerializeField] private AudioClip clipCongratulations;
 
-    [Tooltip("The free-games congratulations panel closing.")]
-    [SerializeField] private AudioClip clipCongratsClose;
-
-    [Tooltip("Scatter anticipation: plays while reels are held after two Lamps have landed, and is cut when the last held reel lands. Needs anticipationSource.")]
+    [Tooltip("Anticipation (bonus scatter fail.mp3): plays while reels are held, and is cut when the last held reel lands. Needs anticipationSource.")]
     [SerializeField] private AudioClip clipAnticipation;
 
-    [Tooltip("The big-win popup's sound (huge win.wav). Plays ONCE as the popup opens, and is cut when the popup " +
-             "closes — on Take or at the auto-close. While unassigned, the old looping clipBigWin plays instead.")]
-    [SerializeField] private AudioClip clipHugeWin;
+    [Tooltip("Music for a Free Spins round (free spin bg.mp3), in place of clipGameMainBg until TAKE.")]
+    [SerializeField] private AudioClip clipFreeSpinsMusic;
+
+    [Tooltip("MYSTERY RESPIN (mystery respin.mp3): from the popup opening until the respun reel lands, where it is cut.")]
+    [SerializeField] private AudioClip clipMysteryRespin;
+
+    [Tooltip("TOTAL WIN (total win .mp3): once, from the popup opening; cut when the popup goes (TAKE, or the Sandbell Pick's own fade).")]
+    [SerializeField] private AudioClip clipTotalWin;
+
+    [Tooltip("A gem breaking in the Ball Gale Pick (glass break in ball game.mp3).")]
+    [SerializeField] private AudioClip clipGemBreak;
+
+    [Tooltip("The Ball Gale Pick's slide in and out (ball game swoosh.mp3).")]
+    [SerializeField] private AudioClip clipBonusSwoosh;
 
     // A music switch dips rather than overlaps: there is one music source, so the old track fades out
     // over the first half and the new one starts and fades in over the second.
@@ -251,47 +245,6 @@ public class AudioManager : MonoBehaviour
         PlayUISound(clipMaxBetReached);
     }
 
-    // 4. Bonus-trigger stinger (scatters triggering a feature) — a one-shot.
-    internal void PlayScatterTrigger()
-    {
-        PlayUISound(clipScatterTrigger);
-    }
-
-    // 5. The big-win popup's sound. Gold of Luck's huge win plays once; Golden Dynasty's big win, the
-    // fallback while it is unassigned, loops. Either way it is played with Play() on uiSource rather
-    // than PlayOneShot, because a one-shot cannot be cut — and it has to stop with the popup. While it
-    // plays, uiSource reads as busy, so other UI sounds go to reserveSource and are not cut with it.
-    internal void PlayBigWin()
-    {
-        if (!_sfxEnabled) return;
-
-        if (clipHugeWin != null)
-        {
-            PlaySfxOnce(uiSource, clipHugeWin);
-            return;
-        }
-
-        if (clipBigWin == null) return;
-        PlaySfxLoop(uiSource, clipBigWin);
-    }
-
-    internal void StopBigWin()
-    {
-        if (uiSource != null && IsBigWinClip(uiSource.clip))
-        {
-            StopSource(uiSource);
-        }
-        if (reserveSource != null && IsBigWinClip(reserveSource.clip))
-        {
-            StopSource(reserveSource);
-        }
-    }
-
-    private bool IsBigWinClip(AudioClip clip)
-    {
-        return clip != null && (clip == clipHugeWin || clip == clipBigWin);
-    }
-
     // 6. Stop / Take / AutoplayStop / FeatureStart Btn Sound
     internal void PlayPrimaryActionButton()
     {
@@ -353,32 +306,39 @@ public class AudioManager : MonoBehaviour
         PlayUISound(clipWinPresentationStart);
     }
 
-    // 14. Slot Reel Column Stop Sound
-    internal void PlayReelStop()
-    {
-        if (!_sfxEnabled || clipReelStop == null) return;
-
-        if (wheelSegmentSource != null)
-            wheelSegmentSource.PlayOneShot(clipReelStop);
-        else
-            PlayUISound(clipReelStop);
-    }
-
-    // 15. Scatter landing — one shot per reel that contains at least one, not per symbol. Wild
-    // landings deliberately have NO cue in this game: the Wild is announced when it animates.
-    internal void PlayScatterLand() => PlayUISound(clipScatterLand);
-
     // 16. Turbo / spin-speed toggle
     internal void PlayTurboButton() => PlayUISound(clipTurboButton);
 
-    // 17. Golden Dynasty cues.
-    internal void PlayWinLineChange()      => PlayUISound(clipWinLineChange);
-    internal void PlayWildAnimate()        => PlayUISound(clipWildAnimate);
-    internal void PlayWinCountUp()         => PlayUISound(clipWinCountUp);
-
-    // 18. Gold of Luck cues.
+    // 17. Wild Jokers cues.
     internal void PlayCongratulations() => PlayUISound(clipCongratulations);
-    internal void PlayCongratsClose() => PlayUISound(clipCongratsClose);
+
+    // Free Spins' music for the round; PlayBgMusic brings the main track back at TAKE. Same dip as any
+    // music switch.
+    internal void PlayFreeSpinsMusic() => SwitchMusic(clipFreeSpinsMusic);
+
+    // MYSTERY RESPIN and TOTAL WIN outlast what they go with, so they are cut: played with Play() on
+    // uiSource, since a one-shot can't be stopped. While one plays, uiSource reads as
+    // busy and other UI sounds go to reserveSource, so cutting it never cuts them.
+    internal void PlayMysteryRespin() => PlayCuttable(clipMysteryRespin);
+    internal void StopMysteryRespin() => StopCuttable(clipMysteryRespin);
+    internal void PlayTotalWin() => PlayCuttable(clipTotalWin);
+    internal void StopTotalWin() => StopCuttable(clipTotalWin);
+
+    internal void PlayGemBreak() => PlayUISound(clipGemBreak);
+    internal void PlayBonusSwoosh() => PlayUISound(clipBonusSwoosh);
+
+    private void PlayCuttable(AudioClip clip)
+    {
+        if (!_sfxEnabled || clip == null) return;
+        PlaySfxOnce(uiSource, clip);
+    }
+
+    // Only if that clip is the one on the source: anything else playing there is left alone.
+    private void StopCuttable(AudioClip clip)
+    {
+        if (clip == null) return;
+        if (uiSource != null && uiSource.clip == clip) StopSource(uiSource);
+    }
 
     // Scatter anticipation is a DURATION sound: it runs while reels are held and stops when the last
     // held reel lands. Several reels can be held in one spin, so it is started once and left running

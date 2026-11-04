@@ -37,7 +37,7 @@ public class BallGalePickView : MonoBehaviour
     [SerializeField] private List<Sprite> breakFrames = new List<Sprite>();
 
     [Header("Multiplier box")]
-    [Tooltip("The running total (TotalMultiplierValue) — empty until the first value. A plain text for now; sprite digits once the font has an \"X\".")]
+    [Tooltip("The running total (TotalMultiplierValue) — empty until the first value. Sprite digits, the \"x\" as sprite 11 — its sprite asset is set in the scene.")]
     [SerializeField] private TMPro.TMP_Text totalText;
 
     [Tooltip("The glow behind the total, looping from the end of the picking until TAKE — its frames go on its own ImageAnimation. Optional: skipped while unwired or without frames.")]
@@ -130,6 +130,7 @@ public class BallGalePickView : MonoBehaviour
             ballGalePickRect.gameObject.SetActive(false);
         }
 
+        AudioManager.Instance?.PlayBonusSwoosh();
         slideSequence = DOTween.Sequence();
 
         if (slotObject != null)
@@ -188,19 +189,24 @@ public class BallGalePickView : MonoBehaviour
     }
 
     /// <summary>
-    /// One pick (BallGalePickBonus.md §6.4): the gem breaks; once the break has played, its border and
-    /// value show ("X" + value, or COLLECT) and the box shows the running total. onRevealed fires a
-    /// moment after. gemIndex -1 (nothing clicked) shows only the total.
+    /// One pick (BallGalePickBonus.md §6.4): the gem breaks; once the break has played, the gem's image
+    /// goes — uncovering its border (GemBorders, drawn behind the gems, always on) — its value shows
+    /// ("X" + value, or COLLECT) and the box shows the running total. onRevealed fires a moment after.
+    /// gemIndex -1 (nothing clicked) shows only the total.
     /// </summary>
     internal void RevealGem(int gemIndex, BallPick pick, double total, Action onRevealed)
     {
         GaleGem gem = GetGem(gemIndex);
-        if (gem != null) gemPicked[gemIndex] = true;
+        if (gem != null)
+        {
+            gemPicked[gemIndex] = true;
+            AudioManager.Instance?.PlayGemBreak();
+        }
 
         void ShowResult()
         {
             if (gem != null) ShowGemValue(gem, pick);
-            if (pick != null && !pick.isCollect && totalText != null) totalText.text = FormatValue(total);
+            if (pick != null && !pick.isCollect && totalText != null) totalText.text = SpriteTextFormatter.ToSpriteMultiplier(total);
 
             revealDelay?.Kill();
             revealDelay = DOVirtual.DelayedCall(RevealSettle, () =>
@@ -227,7 +233,7 @@ public class BallGalePickView : MonoBehaviour
         animation.onLoopComplete = _ =>
         {
             animation.onLoopComplete = null;
-            // The Image, not the object: the border and the value are its children.
+            // The Image, not the object: the value is its child. The border behind shows through.
             if (gem.image != null) gem.image.enabled = false;
             animation.StopAnimation();
             ShowResult();
@@ -268,6 +274,7 @@ public class BallGalePickView : MonoBehaviour
         Vector2 down = new Vector2(0f, distance);
         RectTransform ballGalePickRect = BallGalePick;
 
+        AudioManager.Instance?.PlayBonusSwoosh();
         slideSequence = DOTween.Sequence();
 
         if (ballGalePickRect != null && ballGalePickRect.gameObject.activeSelf)
@@ -324,8 +331,8 @@ public class BallGalePickView : MonoBehaviour
         callback?.Invoke(gemIndex);
     }
 
-    // Every gem whole and at rest, its value and border hidden, its button locked and listening; the
-    // total empty. The start of every bonus, and init.
+    // Every gem whole and at rest (covering its border), its value hidden, its button locked and
+    // listening; the total empty. The start of every bonus, and init.
     private void PrepareGems()
     {
         int count = gems != null ? gems.Count : 0;
@@ -363,7 +370,6 @@ public class BallGalePickView : MonoBehaviour
             }
 
             if (gem.valueText != null) gem.valueText.gameObject.SetActive(false);
-            if (gem.border != null) gem.border.SetActive(false);
 
             if (gem.button != null)
             {
@@ -379,12 +385,11 @@ public class BallGalePickView : MonoBehaviour
 
     private void ShowGemValue(GaleGem gem, BallPick pick)
     {
-        if (gem.border != null) gem.border.SetActive(true);
-
         if (gem.valueText == null) return;
 
-        // COLLECT is written until its image arrives (owner).
-        gem.valueText.text = pick == null ? string.Empty : (pick.isCollect ? "COLLECT" : FormatValue(pick.value));
+        // Sprite digits, the "x" as sprite 11 — the gems' sprite asset is set on GemValueText in the
+        // scene. COLLECT is written in the text's font until its image arrives (owner).
+        gem.valueText.text = pick == null ? string.Empty : (pick.isCollect ? "COLLECT" : SpriteTextFormatter.ToSpriteMultiplier(pick.value));
         gem.valueText.gameObject.SetActive(true);
     }
 
@@ -532,12 +537,6 @@ public class BallGalePickView : MonoBehaviour
         return index >= 0 && index < gemPicked.Length && gemPicked[index];
     }
 
-    // "X25" — a plain text for now; becomes sprite digits once the value font has an "X".
-    private static string FormatValue(double value)
-    {
-        return "X" + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-    }
-
     private void KillTweens()
     {
         slideSequence?.Kill();
@@ -567,8 +566,9 @@ public class BallGalePickView : MonoBehaviour
     /// hierarchy under this object, so the 100 references needn't be dragged by hand. Reads the
     /// structure, not names: a gem is any object with an ImageAnimation and a Button somewhere inside
     /// it, taken in hierarchy order (the top row left to right, then the rows below). In a gem: its own
-    /// Image and ImageAnimation; the Button inside it; the TMP text inside it; the border is any
-    /// remaining child. Undoable; save the scene afterwards. Anything missing is logged.
+    /// Image and ImageAnimation; the Button inside it; the TMP text inside it. The borders (GemBorders)
+    /// are not read — they must carry no ImageAnimation or Button, or they'd be taken for gems. Undoable;
+    /// save the scene afterwards. Anything missing is logged.
     /// </summary>
     [ContextMenu("Fill gems from children")]
     private void FillGemsFromChildren()
@@ -592,15 +592,6 @@ public class BallGalePickView : MonoBehaviour
                 valueText = gemTransform.GetComponentInChildren<TMPro.TMP_Text>(true)
             };
 
-            // The border: the first child that is neither the button nor the value.
-            foreach (Transform child in gemTransform)
-            {
-                if (child == button.transform) continue;
-                if (gem.valueText != null && child == gem.valueText.transform) continue;
-                gem.border = child.gameObject;
-                break;
-            }
-
             string where = $"{gemTransform.parent?.name} / {gemTransform.name}";
             if (gem.image == null) { problems++; Debug.LogWarning($"[BallGalePickView] {where}: no Image on the gem.", gemTransform); }
             if (gem.valueText == null) { problems++; Debug.LogWarning($"[BallGalePickView] {where}: no TMP value text found.", gemTransform); }
@@ -611,10 +602,9 @@ public class BallGalePickView : MonoBehaviour
         gems = filled;
         UnityEditor.EditorUtility.SetDirty(this);
 
-        if (filled.Count != 20) Debug.LogWarning($"[BallGalePickView] Found {filled.Count} gems — expected 20.", this);
+        if (filled.Count != 20) Debug.LogWarning($"[BallGalePickView] Found {filled.Count} gems — expected 20. Does anything else under the panel (the borders?) carry an ImageAnimation and a Button?", this);
         Debug.Log($"[BallGalePickView] Filled {filled.Count} gems" +
-                  (problems > 0 ? $" — {problems} references missing, see the warnings." : " — save the scene to keep them.") +
-                  " No border found is fine until the border art is in.", this);
+                  (problems > 0 ? $" — {problems} references missing, see the warnings." : " — save the scene to keep them."), this);
     }
 
     #endregion
@@ -629,6 +619,5 @@ public class GaleGem
     public Image image;                 // the gem — disabled (not deactivated) once it has broken
     public ImageAnimation animation;    // on the gem: the glare, then the break
     public Button button;               // GaleButton — the click target, inside the gem
-    public TMPro.TMP_Text valueText;    // GaleValueText — "X" + value, or COLLECT
-    public GameObject border;           // the empty gem border, shown after the break — optional, art to come
+    public TMPro.TMP_Text valueText;    // GemValueText — "X" + value in sprite digits, or COLLECT
 }

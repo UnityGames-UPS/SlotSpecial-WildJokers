@@ -4,7 +4,7 @@ using DG.Tweening;
 
 /// <summary>
 /// The feature popup shared by all three features (BonusFreeSpins.md §8): a backdrop that rotates
-/// clockwise, a frame, and one child per message, of which exactly one is shown.
+/// anticlockwise, a frame, and one child per message, of which exactly one is shown.
 ///
 /// This object holds the script and stays on. The popup itself is popupGroup (PopupImage in the
 /// scene): its CanvasGroup fades it, and it is what is switched on and off. The backdrop and the
@@ -25,7 +25,7 @@ public class FeaturePopupView : MonoBehaviour
     [SerializeField] private CanvasGroup popupGroup;
 
     [Header("Backdrop")]
-    [Tooltip("PopupBackground — rotates clockwise while the popup is up.")]
+    [Tooltip("PopupBackground — rotates anticlockwise while the popup is up.")]
     [SerializeField] private RectTransform popupBackground;
 
     [Header("Messages (children of Popup)")]
@@ -48,9 +48,9 @@ public class FeaturePopupView : MonoBehaviour
 
     // Tuning — placeholders until the owner signs off the timings (BonusFreeSpins.md §11).
     private const float MysteryRespinHold = 1.5f;        // seconds MYSTERY RESPIN stays before it fades
-    private const float CongratulationsHold = 2.5f;      // seconds CONGRATULATIONS stays before it fades
+    private const float CongratulationsHold = 6.5f;      // seconds CONGRATULATIONS stays before it fades — with the fade, the length of its sound (6.9 s, owner)
     private const float FadeOutDuration = 0.4f;          // the CanvasGroup's fade to 0
-    private const float RotationPeriod = 8f;             // seconds for one full clockwise turn of the backdrop
+    private const float RotationPeriod = 8f;             // seconds for one full anticlockwise turn of the backdrop
     private const float TotalWinCountUpDuration = 2f;    // TOTAL WIN's count from 0 to the total
 
     private CanvasGroup ownCanvasGroup;
@@ -90,9 +90,13 @@ public class FeaturePopupView : MonoBehaviour
         PopupObject.SetActive(false);
     }
 
-    /// <summary>MYSTERY RESPIN: shows, holds, fades out. onClosed fires once it has gone.</summary>
+    /// <summary>
+    /// MYSTERY RESPIN: shows, holds, fades out. onClosed fires once it has gone. Its sound runs on
+    /// through the respin — GameManager cuts it when the reel lands.
+    /// </summary>
     internal void ShowMysteryRespin(Action onClosed)
     {
+        AudioManager.Instance?.PlayMysteryRespin();
         ShowThenFade(mysteryRespin, MysteryRespinHold, onClosed);
     }
 
@@ -144,7 +148,8 @@ public class FeaturePopupView : MonoBehaviour
 
         double shown = 0;
         WriteTotal(0);
-        AudioManager.Instance?.PlayWinCountUp();
+        // Once, from here; cut by HideTotalWin if the popup goes first.
+        AudioManager.Instance?.PlayTotalWin();
 
         countUpTween = DOTween.To(() => shown, value => { shown = value; WriteTotal(value); }, amount, TotalWinCountUpDuration)
             .SetEase(Ease.Linear)
@@ -156,9 +161,11 @@ public class FeaturePopupView : MonoBehaviour
             });
     }
 
-    /// <summary>TOTAL WIN goes: fades out. onHidden fires once it has gone.</summary>
+    /// <summary>TOTAL WIN goes: its sound is cut, the popup fades out. onHidden fires once it has gone.</summary>
     internal void HideTotalWin(Action onHidden)
     {
+        AudioManager.Instance?.StopTotalWin();
+
         if (!PopupObject.activeInHierarchy)
         {
             onHidden?.Invoke();
@@ -240,14 +247,14 @@ public class FeaturePopupView : MonoBehaviour
 
     #region Helpers
 
-    // Clockwise is a negative z angle in Unity's UI.
+    // Anticlockwise is a positive z angle in Unity's UI (clockwise is negative).
     private void StartRotation()
     {
         StopRotation();
         if (popupBackground == null) return;
 
         rotationTween = popupBackground
-            .DORotate(new Vector3(0f, 0f, -360f), RotationPeriod, RotateMode.FastBeyond360)
+            .DORotate(new Vector3(0f, 0f, 360f), RotationPeriod, RotateMode.FastBeyond360)
             .SetRelative(true)
             .SetEase(Ease.Linear)
             .SetLoops(-1, LoopType.Restart);

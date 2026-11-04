@@ -24,6 +24,13 @@ public class SandbellPickView : MonoBehaviour
     [Tooltip("The explosion's frames, played once on the clicked Sandbell. One clip for every cell, handed to them at runtime — their own frame lists stay empty. Empty: no explosion.")]
     [SerializeField] private List<Sprite> explosionFrames = new List<Sprite>();
 
+    [Header("Value sprite assets")]
+    [Tooltip("The clicked Sandbell's value (1-0 GREEN). Must carry an \"x\" as sprite 11. Empty: the text keeps its own sprite asset.")]
+    [SerializeField] private TMPro.TMP_SpriteAsset pickedValueSpriteAsset;
+
+    [Tooltip("The other Sandbells' values (0-1ORANGE). Must carry an \"x\" as sprite 11. Empty: the text keeps its own sprite asset.")]
+    [SerializeField] private TMPro.TMP_SpriteAsset missedValueSpriteAsset;
+
     // PICK ME's pulse: up to this scale and back, each half this long, until the pick.
     private const float PickMePulseScale = 1.12f;
     private const float PickMePulseDuration = 0.45f;
@@ -124,7 +131,11 @@ public class SandbellPickView : MonoBehaviour
             }
 
             double value = isPicked ? winValue : missedValues[nextMissed++];
-            cell.valueText.text = FormatValue(value);
+
+            // The colour is the sprite asset: green on the clicked Sandbell, orange on the rest.
+            TMPro.TMP_SpriteAsset spriteAsset = isPicked ? pickedValueSpriteAsset : missedValueSpriteAsset;
+            if (spriteAsset != null) cell.valueText.spriteAsset = spriteAsset;
+            cell.valueText.text = SpriteTextFormatter.ToSpriteMultiplier(value);
             cell.valueText.transform.localScale = Vector3.one * (isPicked ? PickedValueScale : 1f);
             cell.valueText.gameObject.SetActive(true);
         }
@@ -209,12 +220,6 @@ public class SandbellPickView : MonoBehaviour
         };
         explosion.gameObject.SetActive(true);
         explosion.StartAnimation();
-    }
-
-    // "X25" — a plain text for now; becomes sprite digits once the value font has an "X".
-    private static string FormatValue(double value)
-    {
-        return "X" + value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // The cell over one visible board cell (flat index row * reelCount + col), or null when unwired.
