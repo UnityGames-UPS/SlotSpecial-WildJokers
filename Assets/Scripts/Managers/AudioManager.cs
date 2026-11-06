@@ -32,15 +32,13 @@ public class AudioManager : MonoBehaviour
     [Header("Audio Sources")]
     [SerializeField] private AudioSource bgMusicSource;
     [SerializeField] private AudioSource uiSource;
-    [SerializeField] private AudioSource wheelSegmentSource;
     [SerializeField] private AudioSource reserveSource;
     [Tooltip("Dedicated source for the spin loop. Needs its own source because the loop is stopped " +
-             "at landing, and stopping a shared source would cut the reel-stop one-shots firing at " +
-             "that same moment.")]
+             "at landing, and stopping a shared source would cut any one-shot playing on it.")]
     [SerializeField] private AudioSource spinLoopSource;
-    [Tooltip("Dedicated source for the scatter-anticipation tension. It is stopped the moment the last " +
-             "held reel lands, which is exactly when the reel-stop one-shots fire — so it cannot share " +
-             "their source, and the spin loop's source is still busy with the reels at that point.")]
+    [Tooltip("Dedicated source for the anticipation sound. It is stopped the moment the last held reel " +
+             "lands, so it cannot share a source with sounds that must play on past that moment, and " +
+             "the spin loop's source is still busy with the reels then.")]
     [SerializeField] private AudioSource anticipationSource;
 
     [Header("Audio Clips")]
@@ -118,7 +116,6 @@ public class AudioManager : MonoBehaviour
     {
         float v = _sfxEnabled ? _sfxVolume : 0f;
         if (uiSource           != null) uiSource.volume           = v;
-        if (wheelSegmentSource != null) wheelSegmentSource.volume = v;
         if (reserveSource      != null) reserveSource.volume      = v;
         if (spinLoopSource     != null) spinLoopSource.volume     = v;
         if (anticipationSource != null) anticipationSource.volume = v;

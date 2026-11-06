@@ -151,8 +151,7 @@ public class SlotView : MonoBehaviour
     [Tooltip("Shorter hold used when the player is on Turbo.")]
     [SerializeField] private float anticipationExtraTimeTurbo = 1f;
 
-    // How long a respun reel spins (owner, 2026-11-04), on Normal and Turbo alike. The MYSTERY RESPIN
-    // sound plays from the popup until it lands.
+    // How long a respun reel spins (owner, 2026-11-04), on Normal and Turbo alike, unless STOPped.
     private const float RespinSpinTime = 2.4f;
 
     // How long a respun reel spins on Quick Spin or after STOP: just enough to read as a spin before it
@@ -173,13 +172,20 @@ public class SlotView : MonoBehaviour
     [Header("Win Animation Settings")]
     [SerializeField] private float winSymbolLoopDuration = 1.5f;
 
-    // The shape of the win presentation: every winning symbol plays twice in step (once in autoplay
-    // and free spins), then holds, looping, until the next spin. The per-line walk between them is
-    // commented out (owner) — see PlayWinLineCycleRoutine; the two line constants
-    // below belong to it.
+    // The shape of the win presentation: every winning symbol plays twice in step with the total (once
+    // in autoplay and free spins, which stop there). A manual spin then walks the winning lines, each
+    // playing its own cells winLineRounds times, round and round until the next spin — see
+    // PlayWinLineCycleRoutine. Each round is one win-box loop (≈ 1.06 s), so a line stays up for
+    // winLineRounds of them — 2 (owner, 2026-11-05: slower walk), ≈ 2.1 s a line.
     private const int totalWinRounds = 2;
-    private const int winLinePassCount = 1;
-    private const int winLineRounds = 1;
+    private const int winLineRounds = 2;
+
+    // The board total's entrance (owner, 2026-11-04): from its scene scale up to this many times it,
+    // then settling to the second and staying there. Each half this long.
+    private const float TotalWinPopScale = 1.7f;
+    private const float TotalWinSettleScale = 1.3f;
+    private const float TotalWinPopUpDuration = 0.15f;
+    private const float TotalWinPopSettleDuration = 0.10f;
     [Tooltip("Delay between raising the win animation layer and starting the ImageAnimation - for sync timing")]
     [SerializeField] private float winLineBoxToAnimationDelay = 0.05f;
 
@@ -205,8 +211,16 @@ public class SlotView : MonoBehaviour
     [Tooltip("The per-line win amount, ONE PER ROW, top to bottom — element 0 is the top row. This game draws no payline graphics: a win is shown by animating its symbols and putting its payout on the middle reel, so only three positions are ever needed.")]
     [SerializeField] private TMPro.TMP_Text[] winLineAmounts = new TMPro.TMP_Text[3];
 
+    [Tooltip("The payline drawn during the line walk: ONE Image over the reels (Raycast Target off, saved off), its sprite swapped to the winning line's. Off between lines and outside the walk. Empty: the walk shows no line.")]
+    [SerializeField] private Image paylineImage;
+    [Tooltip("One sprite per payline, in the server's line order — element 0 is line 0; 20 for Wild Jokers. A line with no sprite here shows no image.")]
+    [SerializeField] private List<Sprite> paylineSprites = new List<Sprite>();
+
     [Header("Phase 1 Total Win Presentation")]
     [SerializeField] private TMPro.TMP_Text phase1TotalWinText;
+
+    [Tooltip("SpinWinAnimation — the burst behind the total, the total's parent. Switched on with the total and played ONCE each time it shows, its frames and speed as set on its own ImageAnimation; its Image goes once the clip ends, the total stays. Switched off with the total. Empty: the total shows alone.")]
+    [SerializeField] private ImageAnimation totalWinBurst;
 
     [Header("Symbol Info Card")]
     [SerializeField] private SymbolInfoCard symbolInfoCard;
@@ -1059,6 +1073,17 @@ public class SlotView : MonoBehaviour
         StartCoroutine(RespinReelRoutine(reelIndex, finalMatrix, quick, onLanded));
     }
 
+    /// <summary>
+    /// STOP during a respin: the reel stops spinning now and lands quickly. Ignored once it is landing.
+    /// </summary>
+    internal void RequestRespinStop()
+    {
+        respinStopRequested = true;
+    }
+
+    // Set by RequestRespinStop while a respun reel is still spinning; reset as each respin starts.
+    private bool respinStopRequested;
+
     private IEnumerator RespinReelRoutine(int reelIndex, List<List<int>> finalMatrix, bool quick, System.Action onLanded)
     {
         if (symbolInfoCard != null) symbolInfoCard.HideCard();
@@ -1079,13 +1104,20 @@ public class SlotView : MonoBehaviour
         SetAnticipationEffect(reelIndex, true, anticipationOrangeFrames);
         AudioManager.Instance?.PlayAnticipation();
 
+        // Spins for its time, or until STOP (RequestRespinStop), which lands it quickly.
+        respinStopRequested = false;
         float spinTime = quick ? QuickRespinSpinTime : RespinSpinTime;
+        for (float elapsed = 0f; elapsed < spinTime && !respinStopRequested; elapsed += Time.deltaTime)
+        {
+            yield return null;
+        }
+        bool quickLanding = quick || respinStopRequested;
 
         bool landed = false;
-        yield return StopSingleReel(reelIndex, finalMatrix[reelIndex], spinTime, quick, () => landed = true);
+        yield return StopSingleReel(reelIndex, finalMatrix[reelIndex], 0f, quickLanding, () => landed = true);
 
         // Safety net only, as in StopSpinSequence.
-        float giveUpAt = Time.time + (quick ? quickStopDuration : stopDuration) + LandingTimeoutMargin;
+        float giveUpAt = Time.time + (quickLanding ? quickStopDuration : stopDuration) + LandingTimeoutMargin;
         yield return new WaitUntil(() => landed || Time.time >= giveUpAt);
         if (!landed) Debug.LogWarning($"[SlotView] Respun reel {reelIndex} never reported landing — carrying on.");
 
@@ -1291,9 +1323,8 @@ public class SlotView : MonoBehaviour
         bool skipPhase2 = gameManager != null
             && (gameManager.isInFreeSpins || gameManager.isAutoPlaying);
 
-        // SpinWinText switched off (owner): a win shows its symbols animating, with no total on the
-        // board. The win box still shows the amount.
-        // ShowPhase1TotalWin(totalWinAmount);
+        // The total on the board, with its burst (owner, 2026-11-04). The win box shows it too.
+        ShowPhase1TotalWin(totalWinAmount);
 
         AudioManager.Instance?.PlayWinPresentationStart();
 
@@ -1343,37 +1374,37 @@ public class SlotView : MonoBehaviour
     // StartSpin.
     private IEnumerator PlayWinLineCycleRoutine(List<WinLine> winLines, HashSet<int> allWinPositions, double totalWinAmount)
     {
-        // The per-line walk is commented out (owner): Gold of Luck pays ways, not paylines, and a win
-        // just shows every winning symbol animating together. What is left of this routine is the
-        // closing hold below. Kept rather than deleted while the ways win presentation is designed.
-        //
-        // // Once through every line, each line playing its symbols once in step. Bounded, unlike the
-        // // old cycle: what loops at the end is the TOTAL, not the lines. Kept as a loop rather than a
-        // // straight pass so the count stays a single constant to change.
-        // for (int pass = 0; pass < winLinePassCount; pass++)
-        // {
-        //     foreach (var winLine in winLines)
-        //     {
-        //         if (winLine.positions == null || winLine.positions.Count == 0) continue;
-        //
-        //         KillWinTweens(false);
-        //
-        //         // Lines are a Phase 2 thing only — the total shows every winning symbol at once with
-        //         // no line drawn, then this walks them one at a time. (Its line-change sound was a
-        //         // Golden Dynasty clip, removed 2026-11-04.)
-        //         ShowWinLine(winLine);
-        //
-        //         yield return AnimateWinPositions(winLine.positions, rounds: winLineRounds);
-        //     }
-        // }
+        // The line walk (owner, 2026-11-05): each winning line in turn — its payline image, its
+        // amount on reel 3, and only its own cells and boxes, played once — then the next, over and
+        // over until the next spin. The total stays hidden throughout: KillWinTweens takes it down
+        // with everything else between lines. No sound (the line-change clip was Golden Dynasty's).
+        while (winLines != null)
+        {
+            float passStart = Time.time;
+            bool anyLineShown = false;
 
-        // Every winning symbol, looping, and hold. rounds: 0 starts everything looping and returns at
-        // once, so this coroutine ends here with the board still animating — the next spin's teardown
-        // is what stops it. Nulling the handle lets PlayWinLineCycle start a fresh sequence if a round
-        // ends.
+            foreach (var winLine in winLines)
+            {
+                if (winLine == null || winLine.positions == null || winLine.positions.Count == 0) continue;
+
+                KillWinTweens(false);
+                ShowWinLine(winLine);
+                anyLineShown = true;
+
+                // Inline, for the same reason as the total in PlayTwoPhaseWinLines.
+                yield return AnimateWinPositions(winLine.positions, rounds: winLineRounds);
+            }
+
+            // Nothing to walk, or a pass that took no time (nothing on it could animate or wait):
+            // looping again would lock the frame. Fall through to the hold instead.
+            if (!anyLineShown || Time.time <= passStart) break;
+        }
+
+        // The hold — reached only when no line could be walked. Every winning symbol, looping, with
+        // the total back on, settled and without its burst (only the first show of the total bursts).
+        // rounds: 0 starts everything looping and returns at once; the next spin's teardown stops it.
         KillWinTweens(false);
-        HideAllWinLines();
-        // ShowPhase1TotalWin(totalWinAmount);   // SpinWinText switched off (owner)
+        ShowTotalWinHold(totalWinAmount);
 
         // Inline for the same reason as the total above.
         yield return AnimateWinPositions(allWinPositions, rounds: 0);
@@ -1560,12 +1591,39 @@ public class SlotView : MonoBehaviour
 
     private void ShowPhase1TotalWin(double totalWinAmount)
     {
+        // The burst first: it is the total's parent, so the total can't show while it is off.
+        PlayTotalWinBurst();
+
         if (phase1TotalWinText != null)
         {
             // Sprite digits, drawn from the text's sprite asset — the same one the per-line amounts
             // use, so the total and the lines always match each other.
             phase1TotalWinText.text = SpriteTextFormatter.ToSpriteMoney(totalWinAmount);
-            AnimateTextScaleAppear(phase1TotalWinText.transform);
+            AnimateTotalWinAppear(phase1TotalWinText.transform);
+        }
+    }
+
+    // The total with no burst and no pop: its parent on with the burst Image off, and the text already
+    // at its settled scale — where ShowPhase1TotalWin's pop leaves it.
+    private void ShowTotalWinHold(double totalWinAmount)
+    {
+        if (totalWinBurst != null)
+        {
+            totalWinBurst.onLoopComplete = null;
+            totalWinBurst.StopAnimation();
+            totalWinBurst.gameObject.SetActive(true);
+
+            Image burstImage = totalWinBurst.GetComponent<Image>();
+            if (burstImage != null) burstImage.enabled = false;
+        }
+
+        if (phase1TotalWinText != null)
+        {
+            Transform textTransform = phase1TotalWinText.transform;
+            phase1TotalWinText.text = SpriteTextFormatter.ToSpriteMoney(totalWinAmount);
+            textTransform.DOKill();
+            textTransform.localScale = TotalWinSceneScale * TotalWinSettleScale;
+            textTransform.gameObject.SetActive(true);
         }
     }
 
@@ -1574,21 +1632,76 @@ public class SlotView : MonoBehaviour
         if (phase1TotalWinText != null)
         {
             phase1TotalWinText.transform.DOKill();
-            phase1TotalWinText.transform.localScale = Vector3.one;
+            phase1TotalWinText.transform.localScale = TotalWinSceneScale;
             phase1TotalWinText.gameObject.SetActive(false);
+        }
+
+        if (totalWinBurst != null)
+        {
+            totalWinBurst.onLoopComplete = null;
+            totalWinBurst.StopAnimation();
+            totalWinBurst.gameObject.SetActive(false);
         }
     }
 
-    private void AnimateTextScaleAppear(Transform textTransform, float popScale = 1.2f, float durationUp = 0.15f, float durationDown = 0.10f)
+    // The burst behind the total: on, played once, and its Image hidden at the end — the Image, not
+    // the object, which is the total's parent. Without frames it is only the total's parent.
+    private void PlayTotalWinBurst()
+    {
+        if (totalWinBurst == null) return;
+
+        ImageAnimation burst = totalWinBurst;
+        Image burstImage = burst.GetComponent<Image>();
+
+        burst.onLoopComplete = null;
+        burst.StopAnimation();
+        burst.gameObject.SetActive(true);
+
+        bool hasFrames = burst.textureArray != null && burst.textureArray.Count > 0;
+        if (burstImage != null) burstImage.enabled = hasFrames;
+        if (!hasFrames) return;
+
+        burst.doLoopAnimation = false;
+        burst.onLoopComplete = _ =>
+        {
+            burst.onLoopComplete = null;
+            burst.StopAnimation();
+            if (burstImage != null) burstImage.enabled = false;
+        };
+        burst.StartAnimation();
+    }
+
+    // The total's scale as saved in the scene, read the first time it is needed (at Start, before
+    // anything has scaled it): the pop is relative to it, and a hidden total is put back to it.
+    private bool totalWinSceneScaleRead;
+    private Vector3 totalWinSceneScale = Vector3.one;
+    private Vector3 TotalWinSceneScale
+    {
+        get
+        {
+            if (!totalWinSceneScaleRead && phase1TotalWinText != null)
+            {
+                totalWinSceneScale = phase1TotalWinText.transform.localScale;
+                totalWinSceneScaleRead = true;
+            }
+            return totalWinSceneScale;
+        }
+    }
+
+    // On at its scene scale, up to TotalWinPopScale × it, settling to TotalWinSettleScale × it, where
+    // it stays until hidden.
+    private void AnimateTotalWinAppear(Transform textTransform)
     {
         if (textTransform == null) return;
+
+        Vector3 sceneScale = TotalWinSceneScale;
         textTransform.DOKill();
-        textTransform.localScale = Vector3.zero;
+        textTransform.localScale = sceneScale;
         textTransform.gameObject.SetActive(true);
 
         Sequence seq = DOTween.Sequence();
-        seq.Append(textTransform.DOScale(popScale, durationUp).SetEase(Ease.OutQuad));
-        seq.Append(textTransform.DOScale(1.0f, durationDown).SetEase(Ease.InQuad));
+        seq.Append(textTransform.DOScale(sceneScale * TotalWinPopScale, TotalWinPopUpDuration).SetEase(Ease.OutQuad));
+        seq.Append(textTransform.DOScale(sceneScale * TotalWinSettleScale, TotalWinPopSettleDuration).SetEase(Ease.InQuad));
         winTweens.Add(seq);
     }
 
@@ -1761,23 +1874,37 @@ public class SlotView : MonoBehaviour
     }
 
     /// <summary>
-    /// Shows one win's payout. There is no payline graphic in this game — a win is presented by
-    /// animating its symbols, and this is the only thing drawn on top of them.
+    /// Shows one win's line during the walk: its payline image, and its payout on the MIDDLE REEL
+    /// (reel 3), in the row the line passes through there — the row of that reel's box, which is why
+    /// three labels cover every win.
     ///
-    /// The amount sits on the MIDDLE REEL, at the first row this win occupies there, which is why
-    /// three labels cover every win. Read from the win's own positions, so it follows what is
-    /// actually animating.
-    ///
-    /// A win that never reaches the middle reel falls back to the middle row.
+    /// The row is read from the payline itself (gameConfig.paylines[lineId]), so a 2-symbol win that
+    /// stops short of reel 3 still puts its amount where its line crosses it. Without the payline
+    /// table it falls back to the win's own cell on reel 3, then to the middle row.
     /// </summary>
     private void ShowWinLine(WinLine winLine)
     {
-        if (winLineAmounts == null || winLine == null) return;
+        if (winLine == null) return;
+
+        ShowPaylineImage(winLine.lineId);
+
+        if (winLineAmounts == null) return;
 
         int middleReel = ReelCount / 2;
         int row = RowCount / 2;
 
-        if (winLine.positions != null)
+        List<List<int>> paylines = gameManager != null && gameManager.gameConfig != null
+            ? gameManager.gameConfig.paylines
+            : null;
+        List<int> payline = paylines != null && winLine.lineId >= 0 && winLine.lineId < paylines.Count
+            ? paylines[winLine.lineId]
+            : null;
+
+        if (payline != null && middleReel < payline.Count)
+        {
+            row = payline[middleReel];
+        }
+        else if (winLine.positions != null)
         {
             foreach (int flatIndex in winLine.positions)
             {
@@ -1807,10 +1934,32 @@ public class SlotView : MonoBehaviour
         label.gameObject.SetActive(true);
     }
 
-    // All three, not just the one showing: the cycle moves between rows, and only the row that is
-    // about to be shown gets switched on again.
+    // The winning line's sprite on the one payline image, and the image on. A line with no sprite
+    // leaves the image off rather than showing the previous line's.
+    private void ShowPaylineImage(int lineId)
+    {
+        if (paylineImage == null) return;
+
+        Sprite sprite = paylineSprites != null && lineId >= 0 && lineId < paylineSprites.Count
+            ? paylineSprites[lineId]
+            : null;
+
+        if (sprite == null)
+        {
+            paylineImage.gameObject.SetActive(false);
+            return;
+        }
+
+        paylineImage.sprite = sprite;
+        paylineImage.gameObject.SetActive(true);
+    }
+
+    // All three amounts, not just the one showing — the walk moves between rows, and only the row
+    // about to be shown gets switched on again — and the payline image with them.
     private void HideAllWinLines()
     {
+        if (paylineImage != null) paylineImage.gameObject.SetActive(false);
+
         if (winLineAmounts == null) return;
 
         foreach (var label in winLineAmounts)

@@ -233,7 +233,8 @@ public class BallGalePickView : MonoBehaviour
         animation.onLoopComplete = _ =>
         {
             animation.onLoopComplete = null;
-            // The Image, not the object: the value is its child. The border behind shows through.
+            // The Image, not the object: the button is its child. The border behind, with the value on
+            // it, shows through.
             if (gem.image != null) gem.image.enabled = false;
             animation.StopAnimation();
             ShowResult();
@@ -370,6 +371,7 @@ public class BallGalePickView : MonoBehaviour
             }
 
             if (gem.valueText != null) gem.valueText.gameObject.SetActive(false);
+            if (gem.collectImage != null) gem.collectImage.SetActive(false);
 
             if (gem.button != null)
             {
@@ -383,12 +385,18 @@ public class BallGalePickView : MonoBehaviour
         if (totalText != null) totalText.text = string.Empty;
     }
 
+    // What the broken gem uncovers on its border: the COLLECT image, or the value in sprite digits ("x"
+    // as sprite 11, from GemValueText's sprite asset). With no COLLECT image wired, COLLECT is written.
     private void ShowGemValue(GaleGem gem, BallPick pick)
     {
+        if (pick != null && pick.isCollect && gem.collectImage != null)
+        {
+            gem.collectImage.SetActive(true);
+            return;
+        }
+
         if (gem.valueText == null) return;
 
-        // Sprite digits, the "x" as sprite 11 — the gems' sprite asset is set on GemValueText in the
-        // scene. COLLECT is written in the text's font until its image arrives (owner).
         gem.valueText.text = pick == null ? string.Empty : (pick.isCollect ? "COLLECT" : SpriteTextFormatter.ToSpriteMultiplier(pick.value));
         gem.valueText.gameObject.SetActive(true);
     }
@@ -561,14 +569,21 @@ public class BallGalePickView : MonoBehaviour
 #if UNITY_EDITOR
     #region Editor — fill the gems
 
+    // How far apart (in the panel's units) a gem and its border may sit and still be paired.
+    private const float BorderMatchTolerance = 5f;
+
     /// <summary>
     /// Editor only (right-click the component → "Fill gems from children"): fills gems from the
-    /// hierarchy under this object, so the 100 references needn't be dragged by hand. Reads the
-    /// structure, not names: a gem is any object with an ImageAnimation and a Button somewhere inside
-    /// it, taken in hierarchy order (the top row left to right, then the rows below). In a gem: its own
-    /// Image and ImageAnimation; the Button inside it; the TMP text inside it. The borders (GemBorders)
-    /// are not read — they must carry no ImageAnimation or Button, or they'd be taken for gems. Undoable;
-    /// save the scene afterwards. Anything missing is logged.
+    /// hierarchy under this object, so the references needn't be dragged by hand. Reads the structure,
+    /// not names:
+    ///  - a gem is any object with an ImageAnimation and a Button somewhere inside it, taken in
+    ///    hierarchy order (the top row left to right, then the rows below): its own Image and
+    ///    ImageAnimation, and the Button inside it;
+    ///  - a border (GemBorders) is any object holding a TMP text as a direct child and no Button: that
+    ///    text is the gem's value, and its Image child, if any, the COLLECT image;
+    ///  - each gem takes the border in the same place on the panel — by position, not order, so a
+    ///    border in the wrong row is reported rather than silently paired with the wrong gem.
+    /// Undoable; save the scene afterwards. Anything missing is logged.
     /// </summary>
     [ContextMenu("Fill gems from children")]
     private void FillGemsFromChildren()
@@ -578,46 +593,118 @@ public class BallGalePickView : MonoBehaviour
         var filled = new List<GaleGem>();
         int problems = 0;
 
+        var borders = FindBorders();
+        var usedBorders = new HashSet<Transform>();
+
         foreach (ImageAnimation animation in GetComponentsInChildren<ImageAnimation>(true))
         {
             Transform gemTransform = animation.transform;
             Button button = gemTransform.GetComponentInChildren<Button>(true);
-            if (button == null) continue;   // not a gem — the glow, for one
+            if (button == null) continue;   // not a gem — the glow, or a border's leftover component
 
             var gem = new GaleGem
             {
                 image = gemTransform.GetComponent<Image>(),
                 animation = animation,
-                button = button,
-                valueText = gemTransform.GetComponentInChildren<TMPro.TMP_Text>(true)
+                button = button
             };
 
             string where = $"{gemTransform.parent?.name} / {gemTransform.name}";
             if (gem.image == null) { problems++; Debug.LogWarning($"[BallGalePickView] {where}: no Image on the gem.", gemTransform); }
-            if (gem.valueText == null) { problems++; Debug.LogWarning($"[BallGalePickView] {where}: no TMP value text found.", gemTransform); }
+
+            Transform border = NearestBorder(gemTransform, borders, usedBorders);
+            if (border == null)
+            {
+                problems++;
+                Debug.LogWarning($"[BallGalePickView] {where}: no border found in the same place — no value text or COLLECT image for this gem.", gemTransform);
+            }
+            else
+            {
+                usedBorders.Add(border);
+                gem.valueText = DirectChildText(border);
+
+                // The COLLECT image: the border's first child with an Image (the text has none).
+                foreach (Transform child in border)
+                {
+                    if (child.GetComponent<Image>() == null || child.GetComponent<Button>() != null) continue;
+                    gem.collectImage = child.gameObject;
+                    break;
+                }
+                if (gem.collectImage == null) Debug.LogWarning($"[BallGalePickView] {where}: its border {border.parent?.name} / {border.name} has no COLLECT image — COLLECT will be written as text.", border);
+            }
 
             filled.Add(gem);
+        }
+
+        foreach (Transform border in borders)
+        {
+            if (!usedBorders.Contains(border)) Debug.LogWarning($"[BallGalePickView] Border {border.parent?.name} / {border.name} matched no gem.", border);
         }
 
         gems = filled;
         UnityEditor.EditorUtility.SetDirty(this);
 
-        if (filled.Count != 20) Debug.LogWarning($"[BallGalePickView] Found {filled.Count} gems — expected 20. Does anything else under the panel (the borders?) carry an ImageAnimation and a Button?", this);
-        Debug.Log($"[BallGalePickView] Filled {filled.Count} gems" +
-                  (problems > 0 ? $" — {problems} references missing, see the warnings." : " — save the scene to keep them."), this);
+        if (filled.Count != 20) Debug.LogWarning($"[BallGalePickView] Found {filled.Count} gems — expected 20. Does anything else under the panel carry an ImageAnimation and a Button?", this);
+        Debug.Log($"[BallGalePickView] Filled {filled.Count} gems, {usedBorders.Count} with their border" +
+                  (problems > 0 ? $" — {problems} problems, see the warnings." : " — save the scene to keep them."), this);
+    }
+
+    // Every object under the panel holding a TMP text as a direct child and no Button — the borders.
+    // The multiplier box's total is left out.
+    private List<Transform> FindBorders()
+    {
+        var found = new List<Transform>();
+        foreach (Transform t in GetComponentsInChildren<Transform>(true))
+        {
+            if (t == transform) continue;
+            TMPro.TMP_Text text = DirectChildText(t);
+            if (text == null || text == totalText) continue;
+            if (t.GetComponentInChildren<Button>(true) != null) continue;
+            found.Add(t);
+        }
+        return found;
+    }
+
+    private static TMPro.TMP_Text DirectChildText(Transform parent)
+    {
+        foreach (Transform child in parent)
+        {
+            TMPro.TMP_Text text = child.GetComponent<TMPro.TMP_Text>();
+            if (text != null) return text;
+        }
+        return null;
+    }
+
+    // The unused border closest to the gem, if it is within BorderMatchTolerance of it.
+    private Transform NearestBorder(Transform gemTransform, List<Transform> borders, HashSet<Transform> used)
+    {
+        Vector3 gemPosition = transform.InverseTransformPoint(gemTransform.position);
+        Transform best = null;
+        float bestDistance = BorderMatchTolerance;
+
+        foreach (Transform border in borders)
+        {
+            if (used.Contains(border)) continue;
+            float distance = Vector2.Distance(gemPosition, transform.InverseTransformPoint(border.position));
+            if (distance > bestDistance) continue;
+            bestDistance = distance;
+            best = border;
+        }
+        return best;
     }
 
     #endregion
 #endif
 }
 
-// One gem on the bonus panel (BallGalePick/.../GemRow/Gem): the gem itself, its click target, and what
-// it reveals. Wired explicitly, like the pick cells.
+// One gem on the bonus panel (BallGalePick/.../GemRow/Gem) and what it reveals, which sits on its
+// border (GemBorders/BorderRow/Border), behind it. Wired explicitly, like the pick cells.
 [Serializable]
 public class GaleGem
 {
     public Image image;                 // the gem — disabled (not deactivated) once it has broken
     public ImageAnimation animation;    // on the gem: the glare, then the break
     public Button button;               // GaleButton — the click target, inside the gem
-    public TMPro.TMP_Text valueText;    // GemValueText — "X" + value in sprite digits, or COLLECT
+    public TMPro.TMP_Text valueText;    // the border's GemValueText — "X" + value in sprite digits
+    public GameObject collectImage;     // the border's CollectImage — shown instead of the value on COLLECT
 }

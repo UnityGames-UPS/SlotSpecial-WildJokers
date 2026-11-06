@@ -89,8 +89,14 @@ public class GameManager : MonoBehaviour
     // place a feature holds the display back.
     internal double DisplayBalance => balanceHeld ? heldBalance : playerData.balance;
 
-    // Whether the reels stopped quickly (Quick Spin, or STOP) — a respin that follows lands quickly too.
+    // Whether the reels stopped quickly (Quick Spin, or STOP) — a respin that follows by itself (autoplay,
+    // free spins) lands quickly too. A pressed respin follows the Quick Spin setting instead.
     private bool lastStopWasQuick;
+
+    // A Mystery Respin waiting for the player's Spin press, and whether a respun reel is spinning
+    // (STOP then lands it).
+    private System.Action pendingRespinStart;
+    private bool respinInProgress;
 
     // What the shared button does in its FeatureStart / FeatureTake modes, set by the feature that
     // put it there and cleared on the press.
@@ -237,6 +243,14 @@ public class GameManager : MonoBehaviour
 
     internal void RequestStop()
     {
+        // A respun reel: STOP lands it quickly (PlayMysteryRespin).
+        if (respinInProgress)
+        {
+            if (slotView != null) slotView.RequestRespinStop();
+            uiManager.SetSpinStopButtonStates(isSpinningState: true, isInteractable: false);
+            return;
+        }
+
         if (currentState == GameState.Spinning)
         {
             if (isAutoPlaying)
@@ -392,28 +406,55 @@ public class GameManager : MonoBehaviour
         PresentSpinOutcome();
     }
 
-    // The near-miss respin (BonusFreeSpins.md §4): MYSTERY RESPIN, then the one reel spins again in
-    // orange and lands on the final board, then the spin is presented as usual. One spin, one bet —
-    // the server decided it in the same result.
+    // The near-miss respin (BonusFreeSpins.md §4): MYSTERY RESPIN; the player presses Spin (owner) —
+    // or, on autoplay or in a free-spins round, it goes by itself; the one reel spins again in orange
+    // and lands on the final board; the spin is presented as usual. One spin, one bet — the server
+    // decided it in the same result, so the press sends nothing.
     private IEnumerator PlayMysteryRespin(RespinData respin)
     {
         SpinResult result = lastResult;
 
-        // Nothing to stop or start while the popup is up and the reel respins.
+        // Nothing to press while the popup is up.
         uiManager.SetSpinStopButtonStates(isSpinningState: true, isInteractable: false);
 
         bool popupClosed = featurePopupView == null;
         if (featurePopupView != null) featurePopupView.ShowMysteryRespin(() => popupClosed = true);
         yield return new WaitUntil(() => popupClosed);
 
-        bool landed = false;
-        slotView.RespinReel(respin.reelIndex, result.resultMatrix, lastStopWasQuick, () => landed = true);
-        yield return new WaitUntil(() => landed);
-
-        // The MYSTERY RESPIN sound runs from the popup until the reel is at rest (owner).
+        // Its sound is the popup's only (owner). The respin has the anticipation sound.
         AudioManager.Instance?.StopMysteryRespin();
 
+        bool quick = lastStopWasQuick;
+        if (!isAutoPlaying && !isInFreeSpins)
+        {
+            bool pressed = false;
+            pendingRespinStart = () => pressed = true;
+            uiManager.SetSpinButtonMode(UIManager.SpinButtonMode.RespinStart);
+            yield return new WaitUntil(() => pressed);
+
+            // A pressed respin follows the Quick Spin setting as it is now (owner).
+            quick = currentSpinSpeed == SpinSpeed.QuickSpin;
+        }
+
+        // STOP is live while the reel respins and lands it quickly — for now (owner): what it should
+        // really do is to be checked (ToDo.md).
+        uiManager.SetSpinStopButtonStates(isSpinningState: true, isInteractable: true);
+
+        respinInProgress = true;
+        bool landed = false;
+        slotView.RespinReel(respin.reelIndex, result.resultMatrix, quick, () => landed = true);
+        yield return new WaitUntil(() => landed);
+        respinInProgress = false;
+
         PresentSpinOutcome();
+    }
+
+    // Routed here by UIManager's RespinStart mode: the press that starts a waiting respin.
+    internal void OnRespinStartPressed()
+    {
+        var callback = pendingRespinStart;
+        pendingRespinStart = null;
+        callback?.Invoke();
     }
 
     // Everything that happens once the board is final.

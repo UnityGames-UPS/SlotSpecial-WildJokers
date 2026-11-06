@@ -674,6 +674,13 @@ public class UIManager : MonoBehaviour
                 gameManager.OnFeatureTakePressed();
                 return;
 
+            case SpinButtonMode.RespinStart:
+                // Out of the explicit mode first, so GameManager can put the button into Stop for the
+                // respin. The respin's own spin sound starts with the reel.
+                ApplySpinButtonState(SpinButtonMode.Stop, interactable: false);
+                gameManager.OnRespinStartPressed();
+                return;
+
             case SpinButtonMode.BigWinTake:
                 OnUniversalWinTakeButtonClicked();
                 return;
@@ -1159,7 +1166,8 @@ public class UIManager : MonoBehaviour
     // Modes that share art stay distinct because they answer to different owners: FeatureTake calls
     // back into GameManager for whichever feature showed it, BigWinTake closes the popup.
     // FeatureStart / FeatureTake are the START and TAKE of a feature round — Free Spins' START before
-    // the first free spin and TAKE after TOTAL WIN (BonusFreeSpins.md §5, §7).
+    // the first free spin and TAKE after TOTAL WIN (BonusFreeSpins.md §5, §7). RespinStart is the
+    // Spin face, waiting for the press that starts a Mystery Respin (BonusFreeSpins.md §4).
     internal enum SpinButtonMode
     {
         Spin,
@@ -1167,7 +1175,8 @@ public class UIManager : MonoBehaviour
         AutoplayStop,
         BigWinTake,
         FeatureStart,
-        FeatureTake
+        FeatureTake,
+        RespinStart
     }
 
     private SpinButtonMode spinButtonMode = SpinButtonMode.Spin;
@@ -1179,7 +1188,8 @@ public class UIManager : MonoBehaviour
     {
         return mode == SpinButtonMode.BigWinTake
             || mode == SpinButtonMode.FeatureStart
-            || mode == SpinButtonMode.FeatureTake;
+            || mode == SpinButtonMode.FeatureTake
+            || mode == SpinButtonMode.RespinStart;
     }
 
     internal void SetSpinButtonMode(SpinButtonMode mode, bool interactable = true)
