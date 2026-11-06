@@ -2751,6 +2751,7 @@ MonoBehaviour:
   slotObject: {fileID: 260048363}
   ballGalePick: {fileID: 113232908}
   logoGroup: {fileID: 1043789828}
+  freeGamesCounterGroup: {fileID: 1956865640}
   gems:
   - image: {fileID: 1030730733}
     animation: {fileID: 1030730735}
@@ -38774,7 +38775,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f521a04de7f494272a617b2719edd271, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SocketIOManager
-  testToken: 1c4640dd42f3493ea62cd75c613eb9f8
+  testToken: b9bc54d514d64f3c9b903bb55fb06c02
   gameManager: {fileID: 1206269883}
   uiManager: {fileID: 885496184}
   popupManager: {fileID: 1363796882}

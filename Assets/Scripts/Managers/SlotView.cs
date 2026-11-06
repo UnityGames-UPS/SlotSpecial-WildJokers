@@ -172,8 +172,8 @@ public class SlotView : MonoBehaviour
     [Header("Win Animation Settings")]
     [SerializeField] private float winSymbolLoopDuration = 1.5f;
 
-    // The shape of the win presentation: every winning symbol plays twice in step with the total (once
-    // in autoplay and free spins, which stop there). A manual spin then walks the winning lines, each
+    // The shape of the win presentation: every winning symbol plays twice in step with the total, and
+    // the total waits for its burst to finish (autoplay and free spins stop there). A manual spin then walks the winning lines, each
     // playing its own cells winLineRounds times, round and round until the next spin — see
     // PlayWinLineCycleRoutine. Each round is one win-box loop (≈ 1.06 s), so a line stays up for
     // winLineRounds of them — 2 (owner, 2026-11-05: slower walk), ≈ 2.1 s a line.
@@ -186,6 +186,10 @@ public class SlotView : MonoBehaviour
     private const float TotalWinSettleScale = 1.3f;
     private const float TotalWinPopUpDuration = 0.15f;
     private const float TotalWinPopSettleDuration = 0.10f;
+
+    // The longest the total waits for its burst to finish (WaitForTotalWinBurst). The clip runs about
+    // 2 s (35 frames at speed 25).
+    private const float TotalWinBurstTimeout = 5f;
     [Tooltip("Delay between raising the win animation layer and starting the ImageAnimation - for sync timing")]
     [SerializeField] private float winLineBoxToAnimationDelay = 0.05f;
 
@@ -821,7 +825,8 @@ public class SlotView : MonoBehaviour
 
     /// <summary>
     /// Which reels are held back to tease a trigger: the union of each feature's rule. Free Spins and
-    /// Sandbell Pick anticipate; Ball Gale Pick never does (its spec's §3). Decided on the board the
+    /// Sandbell Pick anticipate — the Sandbell inside a Free Spins round too, where it can also be won;
+    /// Ball Gale Pick never does (its spec's §3). Decided on the board the
     /// reels land on — before any respin — so a respin that completes a trigger still reads as a near
     /// miss first.
     /// </summary>
@@ -832,8 +837,9 @@ public class SlotView : MonoBehaviour
 
         AddDrumAnticipation(resultMatrix, config, results);
 
-        // The Sandbell Pick is base game only, so a free spin never teases it.
-        if (!gameManager.isInFreeSpins) AddSandbellAnticipation(resultMatrix, config, results);
+        // In the base game and inside Free Spins alike: the Sandbell Pick can be won in a round too
+        // (backend, 2026-11-06).
+        AddSandbellAnticipation(resultMatrix, config, results);
     }
 
     /// <summary>
@@ -1328,15 +1334,17 @@ public class SlotView : MonoBehaviour
 
         AudioManager.Instance?.PlayWinPresentationStart();
 
-        // The total: every winning symbol, twice, in step. Autoplay and Free Games get a single
-        // round and end here — a full sequence on every spin would make a round crawl.
+        // The total: every winning symbol, twice, in step — the same in autoplay and Free Games, which
+        // end here (owner, 2026-11-06: their single round cut the burst off halfway and moved on).
         //
         // Yielded directly, NOT through StartCoroutine. A nested StartCoroutine is its own coroutine:
         // stopping this one (the next spin's KillWinTweens) left it running, waiting forever for
         // loop-complete callbacks that teardown had already cleared — one stuck coroutine per
         // interrupted win. Run inline, it stops with this one.
-        yield return AnimateWinPositions(
-            allWinPositions, rounds: skipPhase2 ? 1 : totalWinRounds);
+        yield return AnimateWinPositions(allWinPositions, rounds: totalWinRounds);
+
+        // The burst plays to its end before the total goes, however long its clip is set.
+        yield return WaitForTotalWinBurst();
 
         KillWinTweens(false);
         HidePhase1TotalWinText();
@@ -1669,6 +1677,23 @@ public class SlotView : MonoBehaviour
             if (burstImage != null) burstImage.enabled = false;
         };
         burst.StartAnimation();
+    }
+
+    // Returns once the burst has played out: its Image goes when its clip ends (PlayTotalWinBurst), and
+    // an off burst has nothing left to play. TotalWinBurstTimeout stops a clip that never reports its
+    // end from holding the spin.
+    private IEnumerator WaitForTotalWinBurst()
+    {
+        if (totalWinBurst == null) yield break;
+
+        Image burstImage = totalWinBurst.GetComponent<Image>();
+        if (burstImage == null) yield break;
+
+        float deadline = Time.time + TotalWinBurstTimeout;
+        while (burstImage.enabled && totalWinBurst.gameObject.activeInHierarchy && Time.time < deadline)
+        {
+            yield return null;
+        }
     }
 
     // The total's scale as saved in the scene, read the first time it is needed (at Start, before

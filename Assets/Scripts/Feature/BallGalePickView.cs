@@ -26,6 +26,9 @@ public class BallGalePickView : MonoBehaviour
     [Tooltip("The logo above the reels (Logo) — faded out on the way in, back in on the way out. The same one FreeGameView fades; the two never run together.")]
     [SerializeField] private CanvasGroup logoGroup;
 
+    [Tooltip("FreeGamesRemainingText — the FREE GAME counter, faded instead of the logo when the bonus is won inside Free Spins (the logo is off then). Empty: the header is left as it is during Free Spins.")]
+    [SerializeField] private CanvasGroup freeGamesCounterGroup;
+
     [Header("Gems")]
     [Tooltip("The 20 gems in reading order: the top row left to right, then the rows below. Filled by the component's \"Fill gems from children\" menu.")]
     [SerializeField] private List<GaleGem> gems = new List<GaleGem>(20);
@@ -110,10 +113,11 @@ public class BallGalePickView : MonoBehaviour
 
     /// <summary>
     /// Into the bonus (BallGalePickBonus.md §6.1): every gem whole and locked, the total empty; the
-    /// reels slide down off screen, the logo fades out, the panel slides up into the reels' place.
-    /// The glare starts once it is there; onDone fires then.
+    /// reels slide down off screen, the header fades out — the logo, or inside Free Spins the FREE GAME
+    /// counter — the panel slides up into the reels' place. The glare starts once it is there; onDone
+    /// fires then.
     /// </summary>
-    internal void EnterBonus(Action onDone)
+    internal void EnterBonus(Action onDone, bool inFreeSpins)
     {
         CaptureHomes();
         KillTweens();
@@ -122,6 +126,7 @@ public class BallGalePickView : MonoBehaviour
 
         float distance = SlideDistance();
         Vector2 down = new Vector2(0f, distance);
+        CanvasGroup header = HeaderGroup(inFreeSpins);
 
         RectTransform ballGalePickRect = BallGalePick;
         if (ballGalePickRect != null)
@@ -139,10 +144,10 @@ public class BallGalePickView : MonoBehaviour
             slideSequence.Append(slotObject.DOAnchorPos(slotObjectHome - down, SlideDuration).SetEase(Ease.InCubic));
         }
 
-        if (logoGroup != null)
+        if (header != null)
         {
-            slideSequence.Append(logoGroup.DOFade(0f, LogoFadeDuration).SetEase(Ease.Linear));
-            slideSequence.AppendCallback(() => logoGroup.gameObject.SetActive(false));
+            slideSequence.Append(header.DOFade(0f, LogoFadeDuration).SetEase(Ease.Linear));
+            slideSequence.AppendCallback(() => header.gameObject.SetActive(false));
         }
 
         if (ballGalePickRect != null)
@@ -262,9 +267,10 @@ public class BallGalePickView : MonoBehaviour
 
     /// <summary>
     /// Out of the bonus, after TAKE (BallGalePickBonus.md §7): the panel slides down and goes off,
-    /// the logo fades in, the reels slide back up. onDone fires once they are in place.
+    /// the header fades in — the logo, or inside Free Spins the FREE GAME counter — the reels slide back
+    /// up. onDone fires once they are in place.
     /// </summary>
-    internal void ExitBonus(Action onDone)
+    internal void ExitBonus(Action onDone, bool inFreeSpins)
     {
         CaptureHomes();
         KillTweens();
@@ -274,6 +280,7 @@ public class BallGalePickView : MonoBehaviour
         float distance = SlideDistance();
         Vector2 down = new Vector2(0f, distance);
         RectTransform ballGalePickRect = BallGalePick;
+        CanvasGroup header = HeaderGroup(inFreeSpins);
 
         AudioManager.Instance?.PlayBonusSwoosh();
         slideSequence = DOTween.Sequence();
@@ -291,14 +298,14 @@ public class BallGalePickView : MonoBehaviour
             });
         }
 
-        if (logoGroup != null)
+        if (header != null)
         {
             slideSequence.AppendCallback(() =>
             {
-                logoGroup.alpha = 0f;
-                logoGroup.gameObject.SetActive(true);
+                header.alpha = 0f;
+                header.gameObject.SetActive(true);
             });
-            slideSequence.Append(logoGroup.DOFade(1f, LogoFadeDuration).SetEase(Ease.Linear));
+            slideSequence.Append(header.DOFade(1f, LogoFadeDuration).SetEase(Ease.Linear));
         }
 
         if (slotObject != null)
@@ -522,6 +529,13 @@ public class BallGalePickView : MonoBehaviour
         }
     }
 
+    // What fades above the reels: the logo in the base game; inside Free Spins the logo is off and the
+    // FREE GAME counter stands in its place, so that is faded instead. Null: no header fade.
+    private CanvasGroup HeaderGroup(bool inFreeSpins)
+    {
+        return inFreeSpins ? freeGamesCounterGroup : logoGroup;
+    }
+
     // How far the reels and the panel move: the canvas's height, which takes either fully off screen.
     private float SlideDistance()
     {
@@ -553,6 +567,7 @@ public class BallGalePickView : MonoBehaviour
         revealDelay = null;
         StopGlare();
         if (logoGroup != null) logoGroup.DOKill();
+        if (freeGamesCounterGroup != null) freeGamesCounterGroup.DOKill();
         if (slotObject != null) slotObject.DOKill();
         if (BallGalePick != null) BallGalePick.DOKill();
     }
