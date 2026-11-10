@@ -194,9 +194,9 @@ public class BallGalePickView : MonoBehaviour
     }
 
     /// <summary>
-    /// One pick (BallGalePickBonus.md §6.4): the gem breaks; once the break has played, the gem's image
-    /// goes — uncovering its border (GemBorders, drawn behind the gems, always on) — its value shows
-    /// ("X" + value, or COLLECT) and the box shows the running total. onRevealed fires a moment after.
+    /// One pick (BallGalePickBonus.md §6.4): its value ("X" + value, or COLLECT) goes up on the gem's
+    /// border (GemBorders, drawn behind the gems, always on) and the gem breaks over it; once the break
+    /// has played, the gem's image goes and the box shows the running total. onRevealed fires a moment after.
     /// gemIndex -1 (nothing clicked) shows only the total.
     /// </summary>
     internal void RevealGem(int gemIndex, BallPick pick, double total, Action onRevealed)
@@ -208,9 +208,12 @@ public class BallGalePickView : MonoBehaviour
             AudioManager.Instance?.PlayGemBreak();
         }
 
+        // The value (or COLLECT) goes up on the border before the break starts (owner, 2026-11-09), so
+        // the breaking gem uncovers it. The box's running total still waits for the break to end.
+        if (gem != null) ShowGemValue(gem, pick);
+
         void ShowResult()
         {
-            if (gem != null) ShowGemValue(gem, pick);
             if (pick != null && !pick.isCollect && totalText != null) totalText.text = SpriteTextFormatter.ToSpriteMultiplier(total);
 
             revealDelay?.Kill();

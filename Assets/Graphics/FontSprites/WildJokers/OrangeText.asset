@@ -82,6 +82,11 @@ MonoBehaviour:
   m_SpriteCharacterTable:
   - m_ElementType: 2
     m_Unicode: 65534
+    m_GlyphIndex: 9
+    m_Scale: 1
+    m_Name: OrangeText_9
+  - m_ElementType: 2
+    m_Unicode: 65534
     m_GlyphIndex: 0
     m_Scale: 1
     m_Name: OrangeText_0
@@ -125,11 +130,6 @@ MonoBehaviour:
     m_GlyphIndex: 8
     m_Scale: 1
     m_Name: OrangeText_8
-  - m_ElementType: 2
-    m_Unicode: 65534
-    m_GlyphIndex: 9
-    m_Scale: 1
-    m_Name: OrangeText_9
   - m_ElementType: 2
     m_Unicode: 65534
     m_GlyphIndex: 10
@@ -322,8 +322,8 @@ MonoBehaviour:
       m_Width: 250
       m_Height: 333
       m_HorizontalBearingX: -73
-      m_HorizontalBearingY: 307
-      m_HorizontalAdvance: 150
+      m_HorizontalBearingY: 296
+      m_HorizontalAdvance: 110
     m_GlyphRect:
       m_X: 750
       m_Y: 1

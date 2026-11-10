@@ -173,12 +173,16 @@ public class SlotView : MonoBehaviour
     [SerializeField] private float winSymbolLoopDuration = 1.5f;
 
     // The shape of the win presentation: every winning symbol plays twice in step with the total, and
-    // the total waits for its burst to finish (autoplay and free spins stop there). A manual spin then walks the winning lines, each
-    // playing its own cells winLineRounds times, round and round until the next spin — see
-    // PlayWinLineCycleRoutine. Each round is one win-box loop (≈ 1.06 s), so a line stays up for
+    // the total waits for its burst to finish (autoplay and free spins stop there). A manual spin then
+    // walks the winning lines, each playing its own cells winLineRounds times, WalkPasses times over,
+    // and ends on the total once more — see PlayWinLineCycleRoutine. Each round is one win-box loop (≈ 1.06 s), so a line stays up for
     // winLineRounds of them — 2 (owner, 2026-11-05: slower walk), ≈ 2.1 s a line.
     private const int totalWinRounds = 2;
     private const int winLineRounds = 2;
+
+    // How many times the walk goes through every winning line before the closing total (owner,
+    // 2026-11-10).
+    private const int WalkPasses = 2;
 
     // The board total's entrance (owner, 2026-11-04): from its scene scale up to this many times it,
     // then settling to the second and staying there. Each half this long.
@@ -1262,8 +1266,8 @@ public class SlotView : MonoBehaviour
     /// <summary>
     /// Starts the Phase 2 line-by-line cycle for the spin that just landed. Autoplay and free spins
     /// skip Phase 2 while they're running — a round ends with the presentation parked after Phase 1
-    /// — so the controller calls this once the round is genuinely over. Loops until the next
-    /// StartSpin kills it, same as an ordinary manual spin.
+    /// — so the controller calls this once the round is genuinely over. Walks the lines and ends on
+    /// the closing total, same as an ordinary manual spin.
     ///
     /// If that spin's presentation is still running, the request is left for it rather than acted on
     /// here: it walks the lines itself once its total ends.
@@ -1378,15 +1382,15 @@ public class SlotView : MonoBehaviour
     // PHASE 2: Individual Win Line presentation loop
     // ==========================================
     // Split out of PlayTwoPhaseWinLines so the controller can start it on its own once an autoplay
-    // or free-games round ends. Loops until something kills the coroutine — normally the next
-    // StartSpin.
+    // or free-games round ends. Ends on the closing total, with the winning cells left looping until
+    // something kills them — normally the next StartSpin.
     private IEnumerator PlayWinLineCycleRoutine(List<WinLine> winLines, HashSet<int> allWinPositions, double totalWinAmount)
     {
-        // The line walk (owner, 2026-11-05): each winning line in turn — its payline image, its
-        // amount on reel 3, and only its own cells and boxes, played once — then the next, over and
-        // over until the next spin. The total stays hidden throughout: KillWinTweens takes it down
-        // with everything else between lines. No sound (the line-change clip was Golden Dynasty's).
-        while (winLines != null)
+        // The line walk (owner, 2026-11-05; two passes, 2026-11-10): each winning line in turn — its
+        // payline image, its amount on reel 3 (popping in), and only its own cells and boxes — then
+        // the next, WalkPasses times over. The total stays hidden throughout: KillWinTweens takes it
+        // down with everything else between lines. No sound (the line-change clip was Golden Dynasty's).
+        for (int pass = 0; pass < WalkPasses && winLines != null; pass++)
         {
             float passStart = Time.time;
             bool anyLineShown = false;
@@ -1404,20 +1408,38 @@ public class SlotView : MonoBehaviour
             }
 
             // Nothing to walk, or a pass that took no time (nothing on it could animate or wait):
-            // looping again would lock the frame. Fall through to the hold instead.
+            // another pass would do the same. Go straight to the closing total.
             if (!anyLineShown || Time.time <= passStart) break;
         }
 
-        // The hold — reached only when no line could be walked. Every winning symbol, looping, with
-        // the total back on, settled and without its burst (only the first show of the total bursts).
-        // rounds: 0 starts everything looping and returns at once; the next spin's teardown stops it.
+        // The closing total (owner, 2026-11-10): the payline and amount go; the total comes back with
+        // its stars and its pop, exactly as it first showed, and goes once the stars have played.
+        // Every winning cell's symbol and box is left looping — rounds: 0 starts them and returns at
+        // once — until the next spin's teardown stops them.
         KillWinTweens(false);
-        ShowTotalWinHold(totalWinAmount);
+        ShowPhase1TotalWin(totalWinAmount);
+        float shownAt = Time.time;
 
-        // Inline for the same reason as the total above.
+        // Inline for the same reason as the total in PlayTwoPhaseWinLines.
         yield return AnimateWinPositions(allWinPositions, rounds: 0);
 
+        yield return WaitForTotalWinBurst();
+
+        // No stars to wait for (none wired, or no frames): the total still gets a beat on screen.
+        float shownFor = Time.time - shownAt;
+        if (shownFor < winSymbolLoopDuration && !TotalWinBurstHasFrames())
+        {
+            yield return new WaitForSeconds(winSymbolLoopDuration - shownFor);
+        }
+
+        HidePhase1TotalWinText();
+
         winAnimationCoroutine = null;
+    }
+
+    private bool TotalWinBurstHasFrames()
+    {
+        return totalWinBurst != null && totalWinBurst.textureArray != null && totalWinBurst.textureArray.Count > 0;
     }
 
     // The total and the set of winning cells, rebuilt from the lines. Used by PlayWinLineCycle,
@@ -1611,30 +1633,6 @@ public class SlotView : MonoBehaviour
         }
     }
 
-    // The total with no burst and no pop: its parent on with the burst Image off, and the text already
-    // at its settled scale — where ShowPhase1TotalWin's pop leaves it.
-    private void ShowTotalWinHold(double totalWinAmount)
-    {
-        if (totalWinBurst != null)
-        {
-            totalWinBurst.onLoopComplete = null;
-            totalWinBurst.StopAnimation();
-            totalWinBurst.gameObject.SetActive(true);
-
-            Image burstImage = totalWinBurst.GetComponent<Image>();
-            if (burstImage != null) burstImage.enabled = false;
-        }
-
-        if (phase1TotalWinText != null)
-        {
-            Transform textTransform = phase1TotalWinText.transform;
-            phase1TotalWinText.text = SpriteTextFormatter.ToSpriteMoney(totalWinAmount);
-            textTransform.DOKill();
-            textTransform.localScale = TotalWinSceneScale * TotalWinSettleScale;
-            textTransform.gameObject.SetActive(true);
-        }
-    }
-
     private void HidePhase1TotalWinText()
     {
         if (phase1TotalWinText != null)
@@ -1713,13 +1711,37 @@ public class SlotView : MonoBehaviour
         }
     }
 
-    // On at its scene scale, up to TotalWinPopScale × it, settling to TotalWinSettleScale × it, where
-    // it stays until hidden.
+    // The per-line amounts' scales as saved in the scene, read together the first time one is shown
+    // (before any of them has been popped): each pops relative to its own, and is put back to it when hidden.
+    private Vector3[] winLineAmountSceneScales;
+    private Vector3 WinLineAmountSceneScale(int row)
+    {
+        if (winLineAmountSceneScales == null && winLineAmounts != null)
+        {
+            winLineAmountSceneScales = new Vector3[winLineAmounts.Length];
+            for (int i = 0; i < winLineAmounts.Length; i++)
+            {
+                winLineAmountSceneScales[i] = winLineAmounts[i] != null ? winLineAmounts[i].transform.localScale : Vector3.one;
+            }
+        }
+
+        return winLineAmountSceneScales != null && row >= 0 && row < winLineAmountSceneScales.Length
+            ? winLineAmountSceneScales[row]
+            : Vector3.one;
+    }
+
     private void AnimateTotalWinAppear(Transform textTransform)
+    {
+        AnimateAmountPop(textTransform, TotalWinSceneScale);
+    }
+
+    // The amounts' entrance — the total and the per-line amounts alike (owner, 2026-11-04 and
+    // 2026-11-10): on at its scene scale, up to TotalWinPopScale × it, settling to TotalWinSettleScale
+    // × it, where it stays until hidden.
+    private void AnimateAmountPop(Transform textTransform, Vector3 sceneScale)
     {
         if (textTransform == null) return;
 
-        Vector3 sceneScale = TotalWinSceneScale;
         textTransform.DOKill();
         textTransform.localScale = sceneScale;
         textTransform.gameObject.SetActive(true);
@@ -1956,7 +1978,9 @@ public class SlotView : MonoBehaviour
         // Sprite digits, matching the total win. ToSpriteMoney goes through MoneyFormat, so the two
         // can never disagree about how an amount is written.
         label.text = SpriteTextFormatter.ToSpriteMoney(winLine.winAmount);
-        label.gameObject.SetActive(true);
+
+        // The same pop as the total (owner, 2026-11-10); it switches the label on.
+        AnimateAmountPop(label.transform, WinLineAmountSceneScale(row));
     }
 
     // The winning line's sprite on the one payline image, and the image on. A line with no sprite
@@ -1987,9 +2011,15 @@ public class SlotView : MonoBehaviour
 
         if (winLineAmounts == null) return;
 
-        foreach (var label in winLineAmounts)
+        for (int row = 0; row < winLineAmounts.Length; row++)
         {
-            if (label != null) label.gameObject.SetActive(false);
+            TMPro.TMP_Text label = winLineAmounts[row];
+            if (label == null) continue;
+
+            // Back to its scene scale, in case it was hidden mid-pop.
+            label.transform.DOKill();
+            label.transform.localScale = WinLineAmountSceneScale(row);
+            label.gameObject.SetActive(false);
         }
     }
 
