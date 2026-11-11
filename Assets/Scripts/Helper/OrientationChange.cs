@@ -5,39 +5,50 @@ using System.Collections;
 
 public class OrientationChange : MonoBehaviour
 {
-    // Gold of Luck is portrait-only, so nothing here rotates. All that adapts is the CanvasScaler's
-    // match value, which letterboxes the 1080x1920 canvas — side margins on a wide desktop window,
-    // full-screen on a phone.
+    // Wild Jokers is landscape-only (owner, 2026-11-10). On a wide screen the landscape game is fitted
+    // as it is. On a screen taller than it is wide, the whole game (UIWrapper) turns -90° and is fitted
+    // against the swapped screen, so it fills a phone held upright. The rotation is the one from
+    // OrientationChangeRotate.md; a mode that switches between a portrait and a landscape layout,
+    // for games that have both, is to be added from another project.
     [Header("References")]
+    [Tooltip("What turns on a tall screen: MainCanvas/BG, the fixed 1920 × 1080 root everything visible sits under. Empty: the game is only fitted, never turned.")]
+    [SerializeField] private RectTransform UIWrapper;
     [SerializeField] private CanvasScaler CanvasScaler;
 
     [Header("Transition")]
     [SerializeField] private float transitionDuration = 0.2f;
     [SerializeField] private float waitForRotation = 0.2f;
+
+    // The turn on a tall screen: clockwise, as in the reference.
+    private const float TallScreenAngle = -90f;
+
     private Vector2 referenceResolution;
     private Tween matchTween;
+    private Tween rotationTween;
     private Coroutine rotationRoutine;
 
-    // Last size the match was calculated for. Update polls against these — SwitchDisplay only
-    // fires when the host page reports a resize, so without the poll nothing responds to the
-    // window changing shape in the editor, or in a build whose host reports late or not at all.
+    // Last size the layout was applied for. Update polls against these — SwitchDisplay only fires
+    // when the host page reports a resize (this game's own page never does), so without the poll
+    // nothing would respond to a phone turning, or a window changing shape, after load.
     private int lastWidth = 0;
     private int lastHeight = 0;
 
     private void Awake()
     {
-        referenceResolution = CanvasScaler.referenceResolution; 
+        if (CanvasScaler != null) referenceResolution = CanvasScaler.referenceResolution;
 
-        ApplyMatch(Screen.width, Screen.height, instant: true);
+        // At once, not animated: a phone that starts upright must not be seen turning as the game loads.
+        ApplyLayout(Screen.width, Screen.height, instant: true);
     }
 
-    void SwitchDisplay(string dimensions)
+    // The host page's resize report, "width,height" (sent by SendMessage).
+    private void SwitchDisplay(string dimensions)
     {
         if (rotationRoutine != null) StopCoroutine(rotationRoutine);
         rotationRoutine = StartCoroutine(RotationCoroutine(dimensions));
     }
 
-    IEnumerator RotationCoroutine(string dimensions)
+    private IEnumerator RotationCoroutine(string dimensions)
     {
         yield return new WaitForSecondsRealtime(waitForRotation);
 
@@ -47,7 +58,7 @@ public class OrientationChange : MonoBehaviour
             && int.TryParse(parts[1], out int h)
             && w > 0 && h > 0)
         {
-            ApplyMatch(w, h, instant: false);
+            ApplyLayout(w, h, instant: false);
         }
         else
         {
@@ -55,17 +66,60 @@ public class OrientationChange : MonoBehaviour
         }
     }
 
-    private void ApplyMatch(int screenW, int screenH, bool instant)
+    // The one place the layout is decided. Today a tall screen always means "turn the landscape game";
+    // the switching mode will choose between that and the portrait layout here.
+    private void ApplyLayout(int screenW, int screenH, bool instant)
     {
         lastWidth = screenW;
         lastHeight = screenH;
 
+        bool turned = IsTallScreen(screenW, screenH);
+        ApplyRotation(turned, instant);
+        ApplyMatch(screenW, screenH, turned, instant);
+    }
+
+    // As in the reference: anything not wider than it is tall counts as tall.
+    private static bool IsTallScreen(int screenW, int screenH)
+    {
+        return screenW <= screenH;
+    }
+
+    private void ApplyRotation(bool turned, bool instant)
+    {
+        if (UIWrapper == null) return;
+
+        Quaternion target = turned ? Quaternion.Euler(0f, 0f, TallScreenAngle) : Quaternion.identity;
+
+        if (rotationTween != null && rotationTween.IsActive()) rotationTween.Kill();
+        rotationTween = null;
+
+        if (instant)
+        {
+            UIWrapper.localRotation = target;
+            return;
+        }
+
+        rotationTween = UIWrapper.DOLocalRotateQuaternion(target, transitionDuration).SetEase(Ease.OutCubic);
+    }
+
+    // The CanvasScaler's match, chosen so the whole game fits the screen: the reference resolution
+    // against the screen as it is, or — turned — against the screen with its sides swapped.
+    private void ApplyMatch(int screenW, int screenH, bool turned, bool instant)
+    {
+        if (CanvasScaler == null) return;
+
         float refW = referenceResolution.x;
         float refH = referenceResolution.y;
+        if (refW <= 0f || refH <= 0f) return;
 
         float widthScale = screenW / refW;
         float heightScale = screenH / refH;
 
+        float targetScale = turned
+            ? Mathf.Min(screenH / refW, screenW / refH)
+            : Mathf.Min(widthScale, heightScale);
+
+        // The scaler's scale is widthScale^(1 - match) × heightScale^match; solved for the target.
         float targetMatch;
         if (Mathf.Abs(heightScale - widthScale) < 0.0001f)
         {
@@ -73,11 +127,12 @@ public class OrientationChange : MonoBehaviour
         }
         else
         {
-            // Fit the whole canvas inside the window.
-            float targetScale = Mathf.Min(widthScale, heightScale);
             float logRatio = Mathf.Log(heightScale / widthScale);
             targetMatch = Mathf.Clamp01(Mathf.Log(targetScale / widthScale) / logRatio);
         }
+
+        if (matchTween != null && matchTween.IsActive()) matchTween.Kill();
+        matchTween = null;
 
         if (instant)
         {
@@ -85,7 +140,6 @@ public class OrientationChange : MonoBehaviour
             return;
         }
 
-        if (matchTween != null && matchTween.IsActive()) matchTween.Kill();
         matchTween = DOTween
           .To(
             () => CanvasScaler.matchWidthOrHeight,
@@ -94,11 +148,12 @@ public class OrientationChange : MonoBehaviour
             transitionDuration)
           .SetEase(Ease.InOutQuad);
     }
+
     private void Update()
     {
         if (Screen.width != lastWidth || Screen.height != lastHeight)
         {
-            ApplyMatch(Screen.width, Screen.height, instant: false);
+            ApplyLayout(Screen.width, Screen.height, instant: false);
         }
 
 #if UNITY_EDITOR

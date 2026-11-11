@@ -26718,7 +26718,7 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 446872441}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0.8163927}
+  m_AnchorMin: {x: 0, y: 0.8205721}
   m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 20}
@@ -27728,7 +27728,7 @@ MonoBehaviour:
     maximum win for the bonus.
 
     2,
-    3 or 4 Ball symbils on 1-4 reels initiate
+    3 or 4 Ball symbols on 1-4 reels initiate
 
     the respin feature on the fifth
     reel.
@@ -30590,7 +30590,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 540, y: -5657.3}
+  m_AnchoredPosition: {x: 540, y: -5794.31}
   m_SizeDelta: {x: 1080, y: 7}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &967397825
@@ -39952,7 +39952,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 530, y: -5778.96}
+  m_AnchoredPosition: {x: 530, y: -5915.97}
   m_SizeDelta: {x: 1060, y: 206.32}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &1222893637
@@ -40669,7 +40669,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f521a04de7f494272a617b2719edd271, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SocketIOManager
-  testToken: c90f82f8a917476f8f6b01ce077ad261
+  testToken: 97afa60767c24a0c8a9f5f362ce7adb3
   gameManager: {fileID: 1206269883}
   uiManager: {fileID: 885496184}
   popupManager: {fileID: 1363796882}
@@ -43567,6 +43567,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 36ff3beb5fc764d3ab2a0b7369907ce5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OrientationChange
+  UIWrapper: {fileID: 274675663}
   CanvasScaler: {fileID: 2095227328}
   transitionDuration: 0.2
   waitForRotation: 0.2
@@ -44422,8 +44423,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 530, y: -5286.15}
-  m_SizeDelta: {x: 1060, y: 705.3}
+  m_AnchoredPosition: {x: 530, y: -5354.655}
+  m_SizeDelta: {x: 1060, y: 842.31}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1001 &1378104378
 PrefabInstance:
@@ -50399,7 +50400,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!224 &1552791362
 RectTransform:
   m_ObjectHideFlags: 0
@@ -50439,7 +50440,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1559597158
 RectTransform:
   m_ObjectHideFlags: 0
@@ -56182,7 +56183,7 @@ RectTransform:
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
   m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 0, y: 5882.1196}
+  m_SizeDelta: {x: 0, y: 6019.13}
   m_Pivot: {x: 0, y: 1}
 --- !u!114 &1749517726
 MonoBehaviour:
@@ -64585,7 +64586,7 @@ MonoBehaviour:
   m_HandleRect: {fileID: 834843635}
   m_Direction: 2
   m_Value: 1
-  m_Size: 0.18360728
+  m_Size: 0.17942792
   m_NumberOfSteps: 0
   m_OnValueChanged:
     m_PersistentCalls:
