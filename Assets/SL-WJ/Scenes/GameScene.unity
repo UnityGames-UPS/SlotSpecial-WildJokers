@@ -28240,6 +28240,19 @@ MonoBehaviour:
     tier: 2
   - button: {fileID: 1950063455}
     tier: 3
+  paytableTexts:
+  - symbolId: 1
+    text: {fileID: 489106072}
+  - symbolId: 2
+    text: {fileID: 581001450}
+  - symbolId: 3
+    text: {fileID: 438667930}
+  - symbolId: 4
+    text: {fileID: 1446175876}
+  - symbolId: 5
+    text: {fileID: 1359532631}
+  - symbolId: 6
+    text: {fileID: 639737780}
   pingText: {fileID: 198469602}
   pingTextPortrait: {fileID: 460680268}
   grandJackpotText: {fileID: 198469601}
@@ -40669,7 +40682,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f521a04de7f494272a617b2719edd271, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SocketIOManager
-  testToken: 97afa60767c24a0c8a9f5f362ce7adb3
+  testToken: af641a5fcf4e4401855926aae3c88878
   gameManager: {fileID: 1206269883}
   uiManager: {fileID: 885496184}
   popupManager: {fileID: 1363796882}

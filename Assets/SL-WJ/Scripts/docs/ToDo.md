@@ -210,6 +210,11 @@ Wild Jokers' own clips are wired (2026-11-04); the old games' clips, fields and 
       instantly at load, animated (0.2 s) on a resize; polls the screen every frame.
   - [ ] **(owner)** Wire `OrientationChange.UIWrapper` → `MainCanvas/BG` (on `OC`).
   - [ ] **Later:** a portrait/landscape switching mode, migrated from another project (owner).
+- [x] **Info page paytable from the server** (owner, 2026-11-12) — `UIManager.paytableTexts` (symbol id +
+      text) written by `RefreshPaytableTexts` from the init's paytable as payouts at the current bet
+      (multiplier × bet per line, `0.###`, full match first), again on every bet change.
+  - [ ] **(owner)** Wire the six entries: `IconMultiPlier/IconHolder (2..7)/Text (TMP)` with ids 1–6
+        (Jack-in-the-box, A, K, Q, J, 10).
 
 - [x] **(owner) Landscape wiring on `UIManager`** finished.
 - [ ] **Jackpots in landscape** — `jackpotButtons` still lists the portrait buttons; the landscape
